@@ -19,6 +19,7 @@ image_raw_bitmap, so what you preview is exactly what prints.
 
 from __future__ import annotations
 
+import json
 import os
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -260,6 +261,20 @@ async def admin_broadcast(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "delivered": count, "fleet_count": relay.fleet_count()})
 
 
+@app.post("/admin/fleet")
+async def admin_fleet(request: Request) -> JSONResponse:
+    """List devices connected to the fleet channel. Requires master password AND the
+    correct bypass code (so it doubles as a 'check the bypass code' action)."""
+    body = await request.json()
+    if not _require_master(body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if (body.get("bypass_code") or "") != FLEET_CODE:
+        return JSONResponse({"valid": False, "error": "Invalid bypass code"}, status_code=403)
+    return JSONResponse(
+        {"valid": True, "count": relay.fleet_count(), "devices": relay.list_fleet()}
+    )
+
+
 @app.post("/admin/create")
 async def admin_create(request: Request) -> JSONResponse:
     body = await request.json()
@@ -314,16 +329,30 @@ async def messages(ws: WebSocket) -> None:
 @app.websocket("/hersheyhighway")
 async def hersheyhighway(ws: WebSocket) -> None:
     """Fleet broadcast channel. Every app connects here with the shared static bypass code;
-    the admin can then broadcast one job to all of them at once."""
+    the admin can then broadcast one job to all of them at once, or check who's connected."""
     provided = ws.query_params.get("password") or ws.query_params.get("code")
     if provided != FLEET_CODE:
         await ws.close(code=4401)
         return
+    # Real client IP: X-Forwarded-For's first hop (behind a proxy), else the socket peer.
+    fwd = ws.headers.get("x-forwarded-for", "")
+    ip = fwd.split(",")[0].strip() if fwd else (ws.client.host if ws.client else "?")
     await ws.accept()
-    client = await relay.register_fleet(ws)
+    client = await relay.register_fleet(ws, ip=ip)
     try:
         while True:
-            await ws.receive_text()
+            msg = await ws.receive_text()
+            # The app sends an auth/info frame on connect carrying device details.
+            try:
+                data = json.loads(msg)
+                if isinstance(data, dict) and data.get("type") in ("auth", "info"):
+                    client.info = {
+                        k: data.get(k)
+                        for k in ("device_id", "serial", "model", "version")
+                        if data.get(k) is not None
+                    }
+            except (ValueError, TypeError):
+                pass
     except WebSocketDisconnect:
         pass
     except Exception:

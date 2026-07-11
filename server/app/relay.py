@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
@@ -21,6 +22,9 @@ from fastapi import WebSocket
 class Client:
     ws: WebSocket
     device_id: str = "default"
+    ip: str = ""
+    connected_at: float = field(default_factory=time.time)
+    info: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -49,8 +53,8 @@ class Relay:
         return any(c.device_id == device_id for c in self.clients)
 
     # ---- fleet broadcast ----
-    async def register_fleet(self, ws: WebSocket) -> Client:
-        client = Client(ws=ws, device_id="fleet")
+    async def register_fleet(self, ws: WebSocket, ip: str = "") -> Client:
+        client = Client(ws=ws, device_id="fleet", ip=ip)
         async with self._lock:
             self.fleet_clients.append(client)
         return client
@@ -62,6 +66,24 @@ class Relay:
 
     def fleet_count(self) -> int:
         return len(self.fleet_clients)
+
+    def list_fleet(self) -> List[dict]:
+        """Info about every device on the fleet channel (for the admin bypass check)."""
+        now = time.time()
+        out = []
+        for c in self.fleet_clients:
+            out.append(
+                {
+                    "ip": c.ip or "?",
+                    "connected_at": c.connected_at,
+                    "connected_secs": int(now - c.connected_at),
+                    "serial": c.info.get("serial"),
+                    "model": c.info.get("model"),
+                    "version": c.info.get("version"),
+                    "device_id": c.info.get("device_id"),
+                }
+            )
+        return out
 
     async def broadcast_fleet(self, job: dict) -> int:
         """Send one job to every device on the fleet channel. Returns how many got it."""

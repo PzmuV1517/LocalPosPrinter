@@ -112,15 +112,30 @@
         <label>Message</label>
         <input id="bcText" type="text" placeholder="Message to print on every printer" />
         <div class="row" style="margin-top:10px">
-          <div>
+          <div style="flex:2">
             <label>Bypass code (app static code)</label>
-            <input id="bcBypass" type="password" placeholder="required to broadcast" />
+            <input id="bcBypass" type="password" placeholder="required to broadcast / check" />
+          </div>
+          <div style="flex:0 0 auto; align-self:flex-end">
+            <button id="bcCheckBtn" class="secondary">Check</button>
           </div>
           <div style="flex:0 0 auto; align-self:flex-end">
             <button id="broadcastBtn" class="danger">Broadcast</button>
           </div>
         </div>
         <div id="bcMsg" style="font-size:13px; min-height:18px; margin-top:8px"></div>
+
+        <div id="fleetDevices" style="margin-top:12px; display:none">
+          <div class="muted" id="fleetSummary" style="margin-bottom:6px"></div>
+          <div class="scroll">
+            <table>
+              <thead>
+                <tr><th>IP</th><th>Serial</th><th>Model</th><th>App</th><th>Connected</th></tr>
+              </thead>
+              <tbody id="fleetBody"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -254,8 +269,36 @@
     $('loginBtn').addEventListener('click', login);
     $('master').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
     $('createBtn').addEventListener('click', create);
+    function fmtDuration(secs) {
+      if (secs < 60) return secs + 's';
+      if (secs < 3600) return Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+      return Math.floor(secs / 3600) + 'h ' + Math.floor((secs % 3600) / 60) + 'm';
+    }
+
+    async function checkFleet() {
+      const { ok, data } = await api('/admin/fleet', { bypass_code: $('bcBypass').value });
+      const m = $('bcMsg'), box = $('fleetDevices');
+      if (!ok || !data.valid) {
+        m.style.color = '#C62828'; m.textContent = data.error || 'Invalid bypass code';
+        box.style.display = 'none';
+        return;
+      }
+      m.style.color = '#2E7D32'; m.textContent = 'Bypass code valid.';
+      box.style.display = '';
+      $('fleetSummary').textContent = `${data.count} device${data.count === 1 ? '' : 's'} on the fleet channel`;
+      $('fleetBody').innerHTML = (data.devices || []).map(d => `
+        <tr>
+          <td class="mono">${esc(d.ip)}</td>
+          <td class="mono">${esc(d.serial) || '<span class="muted">—</span>'}</td>
+          <td>${esc(d.model) || '<span class="muted">—</span>'}</td>
+          <td>${esc(d.version) || '<span class="muted">—</span>'}</td>
+          <td>${fmtDuration(d.connected_secs)}</td></tr>`).join('')
+        || '<tr><td colspan="5" class="muted">No devices connected.</td></tr>';
+    }
+
     $('bcFormat').addEventListener('change', syncBcFields);
     $('broadcastBtn').addEventListener('click', broadcast);
+    $('bcCheckBtn').addEventListener('click', checkFleet);
     syncBcFields();
     setInterval(() => { if (!$('portal').classList.contains('hidden')) refresh(); }, 8000);
   </script>

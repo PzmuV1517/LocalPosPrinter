@@ -1,6 +1,8 @@
 package com.sunmi.printhub.net
 
+import android.os.Build
 import android.util.Log
+import com.sunmi.printhub.BuildConfig
 import com.sunmi.printhub.core.Hub
 import com.sunmi.printhub.core.PrintDispatcher
 import com.sunmi.printhub.db.JobSource
@@ -74,6 +76,18 @@ class InternetListener(
         if (fleet) Hub.fleetConnected = value else Hub.internetConnected = value
     }
 
+    private fun buildAuthFrame(): String {
+        val obj = org.json.JSONObject()
+        obj.put("type", "auth")
+        obj.put("password", accessPassword)
+        if (fleet) {
+            obj.put("serial", Hub.printer.serialNo() ?: "")
+            obj.put("model", "${Build.MANUFACTURER} ${Build.MODEL}")
+            obj.put("version", BuildConfig.VERSION_NAME)
+        }
+        return obj.toString()
+    }
+
     private fun connect() {
         if (!running) return
         val request = Request.Builder().url(url()).build()
@@ -83,8 +97,10 @@ class InternetListener(
                 Log.i(TAG, if (fleet) "Fleet listener connected" else "Internet listener connected")
                 setConnected(true)
                 backoff = MIN_BACKOFF_MS
-                // Also send an auth frame, so servers that prefer a frame over the query param work.
-                webSocket.send("""{"type":"auth","password":"$accessPassword"}""")
+                // Auth frame (also lets servers that prefer a frame over the query param work).
+                // On the fleet channel we include device info so the admin's bypass check can
+                // list who's connected.
+                webSocket.send(buildAuthFrame())
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
