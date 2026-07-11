@@ -409,12 +409,12 @@ object ReceiptRenderer {
     }
 
     /** Boxed content using a monospace character-grid border (dashes, @, #, box-drawing, …). */
-    private fun asciiBoxed(text: String, w: Int, style: String, size: Float = TEXT_SIZE): Bitmap {
-        val b = borders[style] ?: return boxed(text, w, size)
-        val paint = textPaint(size, false)
+    private fun asciiBoxed(text: String, w: Int, style: String, size: Float = TEXT_SIZE, fontNum: Int = 1): Bitmap {
+        val b = borders[style] ?: return boxed(text, w, size, fontNum)
+        val paint = textPaint(size, false, fontNum)
         val cw = paint.measureText("M").coerceAtLeast(1f)
         val cols = ((w - 2 * PAD) / cw).toInt()
-        if (cols < 5) return boxed(text, w, size)
+        if (cols < 5) return boxed(text, w, size, fontNum)
         val inner = cols - 2
         val tl = b[0]; val hz = b[1]; val tr = b[2]; val vt = b[3]; val bl = b[4]; val br = b[5]
 
