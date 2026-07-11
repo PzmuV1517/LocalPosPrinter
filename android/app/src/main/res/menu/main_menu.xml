@@ -9,6 +9,10 @@
         android:title="@string/menu_job_log"
         android:showAsAction="never" />
     <item
+        android:id="@+id/action_logs"
+        android:title="@string/menu_logs"
+        android:showAsAction="never" />
+    <item
         android:id="@+id/action_settings"
         android:title="@string/menu_settings"
         android:showAsAction="never" />

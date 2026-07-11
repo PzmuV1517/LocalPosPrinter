@@ -161,6 +161,9 @@ class MainActivity : AppCompatActivity() {
             com.sunmi.printhub.R.id.action_job_log -> {
                 startActivity(android.content.Intent(this, JobLogActivity::class.java)); true
             }
+            com.sunmi.printhub.R.id.action_logs -> {
+                startActivity(android.content.Intent(this, LogsActivity::class.java)); true
+            }
             com.sunmi.printhub.R.id.action_help -> {
                 showHelpDialog(); true
             }
