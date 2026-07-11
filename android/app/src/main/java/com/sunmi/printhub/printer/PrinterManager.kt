@@ -34,7 +34,16 @@ class PrinterManager(private val appContext: Context) {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             service = IWoyouService.Stub.asInterface(binder)
-            Log.i(TAG, "Woyou printer service bound")
+            // Reading serial/version/modal exercises AIDL methods 3/4/5. Real values back =
+            // the AIDL method order is aligned with the on-device service (so printBitmap,
+            // method 16, should also dispatch correctly). Nulls/exceptions = misaligned AIDL.
+            val serial = serialNo()
+            val version = firmwareVersion()
+            val modal = printerModal()
+            Log.i(TAG, "Woyou printer service bound; serial=$serial version=$version modal=$modal")
+            if (serial.isNullOrBlank() && version.isNullOrBlank()) {
+                Log.e(TAG, "Bound but serial+version are empty — AIDL likely misaligned with this firmware")
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -78,6 +87,12 @@ class PrinterManager(private val appContext: Context) {
         null
     }
 
+    fun printerModal(): String? = try {
+        service?.printerModal
+    } catch (_: Throwable) {
+        null
+    }
+
     sealed class PrintResult {
         object Success : PrintResult()
         data class Failure(val message: String) : PrintResult()
@@ -89,32 +104,41 @@ class PrinterManager(private val appContext: Context) {
      * rather than printing garbage.
      */
     fun printBitmap(bitmap: Bitmap, label: Boolean, feedLines: Int = 3): PrintResult {
-        val svc = service ?: return PrintResult.Failure("Printer service not bound")
+        val svc = service ?: run {
+            Log.e(TAG, "printBitmap: service not bound")
+            return PrintResult.Failure("Printer service not bound")
+        }
+        Log.i(TAG, "printBitmap: ${bitmap.width}x${bitmap.height} label=$label")
         val cb = LatchCallback()
         return try {
             if (label) {
                 try {
                     svc.labelLocate()
                 } catch (e: Throwable) {
+                    Log.e(TAG, "labelLocate failed", e)
                     return PrintResult.Failure(
                         "Label mode not supported by this printer/firmware (${e.javaClass.simpleName})"
                     )
                 }
             }
             svc.printBitmap(bitmap, cb)
+            Log.d(TAG, "printBitmap call returned (no exception); awaiting printer callback")
             if (label) {
                 try {
                     svc.labelOutput()
                 } catch (e: Throwable) {
+                    Log.e(TAG, "labelOutput failed", e)
                     return PrintResult.Failure("Label output failed: ${e.message}")
                 }
             } else {
                 svc.lineWrap(feedLines, NoopCallback)
             }
-            awaitResult(cb)
+            awaitResult(cb, "printBitmap")
         } catch (e: RemoteException) {
+            Log.e(TAG, "printBitmap RemoteException", e)
             PrintResult.Failure("Printer RemoteException: ${e.message}")
         } catch (t: Throwable) {
+            Log.e(TAG, "printBitmap failed", t)
             PrintResult.Failure("Print failed: ${t.message}")
         }
     }
@@ -126,18 +150,31 @@ class PrinterManager(private val appContext: Context) {
         return try {
             svc.printText(if (text.endsWith("\n")) text else text + "\n", cb)
             svc.lineWrap(2, NoopCallback)
-            awaitResult(cb)
+            awaitResult(cb, "printText")
         } catch (t: Throwable) {
+            Log.e(TAG, "printRawText failed", t)
             PrintResult.Failure("Print failed: ${t.message}")
         }
     }
 
-    private fun awaitResult(cb: LatchCallback): PrintResult {
+    private fun awaitResult(cb: LatchCallback, op: String): PrintResult {
         val completed = cb.latch.await(PRINT_TIMEOUT_SEC, TimeUnit.SECONDS)
         return when {
-            !completed -> PrintResult.Success // Fire-and-forget: printer didn't call back in time.
-            cb.success -> PrintResult.Success
-            else -> PrintResult.Failure(cb.error ?: "Printer reported failure")
+            !completed -> {
+                // No callback = the printer never confirmed. This is what a wrong AIDL
+                // transaction looks like (the call is silently ignored). Report it honestly
+                // instead of pretending success.
+                Log.e(TAG, "$op: no printer callback within ${PRINT_TIMEOUT_SEC}s — reporting FAILED")
+                PrintResult.Failure("Printer did not confirm within ${PRINT_TIMEOUT_SEC}s (no callback — nothing printed?)")
+            }
+            cb.success -> {
+                Log.i(TAG, "$op: printer confirmed OK")
+                PrintResult.Success
+            }
+            else -> {
+                Log.e(TAG, "$op: printer reported error: ${cb.error}")
+                PrintResult.Failure(cb.error ?: "Printer reported failure")
+            }
         }
     }
 

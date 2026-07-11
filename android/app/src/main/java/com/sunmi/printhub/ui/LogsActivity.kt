@@ -24,6 +24,15 @@ class LogsActivity : AppCompatActivity() {
     private val io = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
+    /** When true, show only this app's own tags (no Qualcomm/GPU/system noise). */
+    private var appOnly = true
+
+    // The app's own log tags — everything meaningful the print/network path writes.
+    private val appTags = arrayOf(
+        "PrinterManager", "PrintDispatcher", "HttpServer",
+        "MqttManager", "InternetListener", "PrintHubService",
+    )
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityLogsBinding.inflate(layoutInflater)
@@ -34,6 +43,11 @@ class LogsActivity : AppCompatActivity() {
         binding.refreshBtn.setOnClickListener { load() }
         binding.clearBtn.setOnClickListener { clear() }
         binding.copyBtn.setOnClickListener { copy() }
+        binding.filterBtn.setOnClickListener {
+            appOnly = !appOnly
+            binding.filterBtn.text = if (appOnly) "App only" else "All"
+            load()
+        }
     }
 
     override fun onResume() {
@@ -51,13 +65,19 @@ class LogsActivity : AppCompatActivity() {
         }
     }
 
-    /** Dump the last ~1000 lines for this process (falls back to unfiltered if --pid is unsupported). */
+    /** Dump recent logs. In "App only" mode, restricts to this app's own tags (via logcat
+     *  tag filters) so the Qualcomm/GPU/system noise is hidden. */
     private fun readLogcat(): String {
         val pid = Process.myPid().toString()
-        val commands = listOf(
-            arrayOf("logcat", "-d", "-v", "time", "-t", "1000", "--pid=$pid"),
-            arrayOf("logcat", "-d", "-v", "time", "-t", "1000"),
-        )
+        val base = arrayOf("logcat", "-d", "-v", "time", "-t", "1500")
+        // "App only": list our tags at Verbose and silence everything else (*:S).
+        val tagFilter = appTags.map { "$it:V" }.toTypedArray() + "*:S"
+
+        val commands = if (appOnly) {
+            listOf(base + tagFilter)
+        } else {
+            listOf(base + "--pid=$pid", base)
+        }
         for (cmd in commands) {
             try {
                 val proc = Runtime.getRuntime().exec(cmd)
@@ -67,7 +87,11 @@ class LogsActivity : AppCompatActivity() {
             } catch (_: Throwable) {
             }
         }
-        return "(no log output — try Refresh, or trigger a print first)"
+        return if (appOnly) {
+            "(no app log lines yet — bind the printer or press Print, then Refresh)"
+        } else {
+            "(no log output — try Refresh, or trigger a print first)"
+        }
     }
 
     private fun clear() {

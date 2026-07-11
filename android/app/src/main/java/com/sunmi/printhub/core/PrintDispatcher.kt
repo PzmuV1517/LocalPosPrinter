@@ -84,6 +84,11 @@ object PrintDispatcher {
     }
 
     private fun finish(result: Result, source: JobSource): Result {
+        if (result.error != null) {
+            Log.w(TAG, "Job ${result.jobId} ${source.wire} ${result.format} -> ${result.status.wire}: ${result.error}")
+        } else {
+            Log.i(TAG, "Job ${result.jobId} ${source.wire} ${result.format} -> ${result.status.wire}")
+        }
         try {
             Hub.jobCompleteListener?.invoke(result, source)
         } catch (_: Throwable) {
