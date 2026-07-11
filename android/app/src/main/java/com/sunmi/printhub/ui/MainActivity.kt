@@ -69,6 +69,9 @@ class MainActivity : AppCompatActivity() {
 
         // Ensure the network channels are running.
         PrintHubService.start(this)
+
+        // Quietly check GitHub for a newer release; prompts only if one is available.
+        com.sunmi.printhub.update.AppUpdater.check(this, silent = true)
     }
 
     private fun buildPayload(): PrintPayload = PrintPayload(
@@ -163,6 +166,9 @@ class MainActivity : AppCompatActivity() {
             }
             com.sunmi.printhub.R.id.action_logs -> {
                 startActivity(android.content.Intent(this, LogsActivity::class.java)); true
+            }
+            com.sunmi.printhub.R.id.action_update -> {
+                com.sunmi.printhub.update.AppUpdater.check(this, silent = false); true
             }
             com.sunmi.printhub.R.id.action_help -> {
                 showHelpDialog(); true

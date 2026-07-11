@@ -17,6 +17,9 @@ server/venv/
 server/data/
 *.pyc
 
+# install.py's working checkout
+.build/
+
 # OS / editor
 .DS_Store
 .vscode/

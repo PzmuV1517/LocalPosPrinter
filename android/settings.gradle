@@ -10,6 +10,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Sunmi's Maven — hosts the official printer library (com.sunmi:printerlibrary).
+        maven { url 'https://maven.sunmi.com/nexus/content/repositories/releases/' }
     }
 }
 
