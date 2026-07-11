@@ -24,6 +24,42 @@ Then:
 - POS app → point its "Internet listener" at this host; it connects to
   `wss://<domain>/messages?password=<ACCESS_PASSWORD>`.
 
+## Set the server password
+
+The **master password** is read from the `ACCESS_PASSWORD` environment variable at startup
+(legacy name `ACCESS_CODE` is still accepted). **If unset it defaults to `1234` — change it.**
+It must match the access password configured in the app.
+
+```bash
+# one-off (this shell only)
+export ACCESS_PASSWORD='choose-a-strong-secret'
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Make it persist across restarts by baking it into however you run the server:
+
+```ini
+# systemd unit — /etc/systemd/system/printhub.service
+[Service]
+Environment=ACCESS_PASSWORD=choose-a-strong-secret
+Environment=PRINT_WIDTH=384
+ExecStart=/path/to/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+WorkingDirectory=/path/to/server
+```
+
+```yaml
+# docker compose
+services:
+  printhub:
+    environment:
+      ACCESS_PASSWORD: choose-a-strong-secret
+      PRINT_WIDTH: "384"
+```
+
+To change it later: update the value and restart the server. There's no password stored in a
+file — it lives only in the environment, so nothing to edit besides the variable. (Note: the
+temporary limited-use passwords created in `/admin` *are* persisted, under `DATA_DIR`.)
+
 ## Passwords & the admin portal
 
 - The **master password** prints without limit and unlocks `/admin`.
