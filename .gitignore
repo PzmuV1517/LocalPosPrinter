@@ -1,0 +1,21 @@
+# Android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+*.iml
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
+
+# Python
+server/__pycache__/
+server/**/__pycache__/
+server/.venv/
+server/venv/
+*.pyc
+
+# OS / editor
+.DS_Store
+.vscode/

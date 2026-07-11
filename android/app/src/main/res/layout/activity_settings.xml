@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Access code -->
+        <TextView style="@style/SectionHeader" android:text="Access code" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <EditText
+                android:id="@+id/accessCodeInput"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:inputType="text" />
+
+            <Button
+                android:id="@+id/regenButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Regenerate" />
+        </LinearLayout>
+
+        <!-- Printing -->
+        <TextView style="@style/SectionHeader" android:text="Printing" />
+
+        <EditText
+            android:id="@+id/widthInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Print width (px, default 384)"
+            android:inputType="number" />
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Default print mode" android:layout_marginTop="8dp" />
+
+        <Spinner
+            android:id="@+id/defaultModeSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <!-- HTTP -->
+        <TextView style="@style/SectionHeader" android:text="HTTP server (LAN)" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/httpEnabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enable HTTP server" />
+
+        <EditText
+            android:id="@+id/httpPortInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Port (default 8080)"
+            android:inputType="number" />
+
+        <!-- MQTT -->
+        <TextView style="@style/SectionHeader" android:text="MQTT" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/mqttEnabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enable MQTT" />
+
+        <EditText android:id="@+id/mqttHostInput" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="Broker host" android:inputType="text" />
+
+        <EditText android:id="@+id/mqttPortInput" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="Broker port (default 1883)" android:inputType="number" />
+
+        <EditText android:id="@+id/mqttUserInput" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="Username (optional)" android:inputType="text" />
+
+        <EditText android:id="@+id/mqttPassInput" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="Password (optional)" android:inputType="textPassword" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/mqttTls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Use TLS" />
+
+        <EditText android:id="@+id/mqttPrefixInput" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="Topic prefix (default sunmi/printhub/)" android:inputType="text" />
+
+        <!-- Internet listener -->
+        <TextView style="@style/SectionHeader" android:text="Internet listener" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/internetEnabled"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enable internet listener" />
+
+        <EditText android:id="@+id/internetDomainInput" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="Server domain (e.g. pos.example.com)" android:inputType="textUri" />
+
+        <TextView
+            android:id="@+id/internetStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Status: unknown"
+            android:layout_marginTop="4dp"
+            android:textStyle="bold" />
+
+        <!-- System -->
+        <TextView style="@style/SectionHeader" android:text="System" />
+
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/autoStart"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Start on boot" />
+
+        <Button
+            android:id="@+id/batteryButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ignore battery optimizations" />
+
+        <Button
+            android:id="@+id/saveButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="Save and restart services" />
+
+    </LinearLayout>
+</ScrollView>
