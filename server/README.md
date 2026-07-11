@@ -79,6 +79,52 @@ Caddy proxies WebSockets transparently; the Python process speaks plain HTTP/WS 
 | GET | `/status` | Device connected? pending jobs? |
 | WS | `/messages` | POS app connects here (`?password=<ACCESS_PASSWORD>`) |
 
+## MUIE — Minimal Unified Incident Envelope (alert system)
+
+A tiny standard your local services use to print a uniform alert. The envelope (fixed
+header + footer) sandwiches your message:
+
+```
+            ALERT
+           <TYPE>
+- - - - - - - - - - -      (dash rule)
+        <message>
+- - - - - - - - - - -
+         * * * *           (short star rule)
+      <service>
+   sent:  <sender time>
+   recv:  <app time>
+         * * * *
+```
+
+`alert_type` is a syslog/journald severity: **emerg, alert, crit, err, warning, notice,
+info, debug**. The footer prints two clocks — the time the sender reported (`sent_at`,
+epoch seconds) and the time the receiving app stamped it (`recv`).
+
+Two ways to fire one, both take the same fields:
+
+**Via the server (TLS at your reverse proxy), which relays to the device:**
+
+```bash
+curl -sX POST https://pos.example.com/alert \
+  -H 'Content-Type: application/json' \
+  -d '{"password":"'"$ACCESS_PASSWORD"'","alert_type":"crit",
+       "service":"backup.service","message":"Snapshot failed: disk 98% full",
+       "sent_at":'"$(date +%s)"'}'
+```
+
+**Directly to the device on the LAN (plain HTTP — the device is Android 7.1):**
+
+```bash
+curl -sX POST http://192.168.1.50:8080/print \
+  -H 'Content-Type: application/json' \
+  -d '{"password":"'"$ACCESS_PASSWORD"'","format":"alert","alert_type":"warning",
+       "service":"diskmon","text":"/var at 90%","sent_at":'"$(date +%s)"'}'
+```
+
+Both render the identical envelope. The server path also honours limited-use passwords
+(and only consumes a use once the alert actually reaches the device).
+
 ## The 1:1 preview guarantee
 
 `/preview` and `/print` call the **same** `render()` in `app/render.py`. Print ships that

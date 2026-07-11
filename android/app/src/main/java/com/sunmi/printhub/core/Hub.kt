@@ -25,6 +25,10 @@ object Hub {
     @Volatile
     var internetConnected = false
 
+    // Live connection state for the always-on fleet (Hershey Highway) broadcast channel.
+    @Volatile
+    var fleetConnected = false
+
     /** Notified after every dispatched job (any source) so MQTT can publish lastjob, etc. */
     @Volatile
     var jobCompleteListener: ((PrintDispatcher.Result, com.sunmi.printhub.db.JobSource) -> Unit)? = null

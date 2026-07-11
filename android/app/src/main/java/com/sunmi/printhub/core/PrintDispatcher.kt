@@ -95,6 +95,7 @@ object PrintDispatcher {
     fun dispatchJson(
         json: String,
         source: JobSource,
+        requirePassword: Boolean = true,
         passwordOverride: String? = null,
         sourceInfo: String? = null,
     ): Result {
@@ -104,6 +105,6 @@ object PrintDispatcher {
             val id = Hub.jobLog.insert(source, "?", null, null, JobStatus.FAILED, "Bad JSON: ${t.message}")
             return Result(false, JobStatus.FAILED, id, "?", "Bad JSON")
         }
-        return dispatch(payload, source, requirePassword = true, passwordOverride = passwordOverride, sourceInfo = sourceInfo)
+        return dispatch(payload, source, requirePassword = requirePassword, passwordOverride = passwordOverride, sourceInfo = sourceInfo)
     }
 }

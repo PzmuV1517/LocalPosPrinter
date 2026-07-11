@@ -31,6 +31,30 @@ object ReceiptRenderer {
     private const val MIN_TEXT_SIZE = 10
     private const val MAX_TEXT_SIZE = 120
 
+    // MUIE (Minimal Unified Incident Envelope) alert layout.
+    // Kept in sync with server/app/render.py (MUIE alert layout).
+    private const val ALERT_SIZE = 30f
+    private const val ALERT_TYPE_SIZE = 15f
+    private const val ALERT_TEXT_SIZE = 20f    // size of the alert message body
+    private const val ALERT_DASH_SIZE = 10f    // size of the "- - -" dash rule
+    private const val ALERT_STAR_SIZE = 10f    // size of the "* * *" star rule
+    private const val ALERT_FOOTER_SIZE = 15f
+    private const val ALERT_THANKS_SIZE = 12f      // "Thank you for using M.U.I.E."
+    private const val ALERT_EXPANSION_SIZE = 10f   // "(Minimal Unified Incident Envelope)"
+    private const val ALERT_HEADER_SPACING = 2f    // vertical padding around header lines (ALERT / type)
+    private const val ALERT_FOOTER_SPACING = 2f    // vertical padding around footer lines (service/time, thanks, expansion)
+
+    // Font per alert line, chosen by number (see alertFontFiles): 1=Jersey10 (default),
+    // 2=built-in mono, 3=Jacquard12, 4=Doto. Missing font files fall back to mono.
+    private const val ALERT_FONT = 1
+    private const val ALERT_TYPE_FONT = 1
+    private const val ALERT_TEXT_FONT = 1
+    private const val ALERT_DASH_FONT = 1
+    private const val ALERT_STAR_FONT = 1
+    private const val ALERT_FOOTER_FONT = 1
+    private const val ALERT_THANKS_FONT = 1
+    private const val ALERT_EXPANSION_FONT = 1
+
     class RenderException(message: String) : Exception(message)
 
     /** Border char sets: tl, horizontal, tr, vertical, bl, br. Plain repeating primitives. */
@@ -63,44 +87,51 @@ object ReceiptRenderer {
 
     fun render(payload: PrintPayload, widthPx: Int): Bitmap {
         val w = widthPx.coerceAtLeast(64)
+        val fontNum = payloadFont(payload)
         return when (payload.formatEnum) {
             PrintFormat.IMAGE -> imageOnly(payload, w)
-            PrintFormat.BARCODE -> withOptionalTitle(payload, w) {
+            PrintFormat.BARCODE -> withOptionalTitle(payload, w, fontNum) {
                 val code = CodeRenderer.barcode(
                     payload.text ?: throw RenderException("barcode requires 'text'"),
                     payload.barcodeType, (w - 2 * PAD).toInt()
                 )
                 centerOnWhite(code, w)
             }
-            PrintFormat.QRCODE -> withOptionalTitle(payload, w) {
+            PrintFormat.QRCODE -> withOptionalTitle(payload, w, fontNum) {
                 val qr = CodeRenderer.qrCode(
                     payload.text ?: throw RenderException("qrcode requires 'text'"),
                     (w * 0.75f).toInt()
                 )
                 centerOnWhite(qr, w)
             }
+            PrintFormat.ALERT -> alertEnvelope(payload, w)
             else -> textFormatWithOptionalImage(payload, w)
         }
     }
+
+    /** Font number for a whole print, from 'font' (alias legacy 'alert_font'), default 1 (mono). */
+    private fun payloadFont(payload: PrintPayload): Int =
+        (payload.font ?: payload.alertFont)?.takeIf { it in 1..4 } ?: 1
 
     // ---- text formats ----
 
     private fun textFormatWithOptionalImage(payload: PrintPayload, w: Int): Bitmap {
         // Honour a text_size override and expand tabs so whitespace prints as typed.
         val size = clampSize(payload.textSize)
+        val fontNum = payloadFont(payload)
         val text = expandTags(expandTabs(payload.text ?: ""), w, size)
         val textBmp = when (payload.formatEnum) {
-            PrintFormat.PLAIN -> textBlock(text, size, false, Layout.Alignment.ALIGN_NORMAL, w)
-            PrintFormat.CENTERED -> textBlock(text, size, false, Layout.Alignment.ALIGN_CENTER, w)
+            PrintFormat.PLAIN -> textBlock(text, size, false, Layout.Alignment.ALIGN_NORMAL, w, PAD, fontNum)
+            PrintFormat.CENTERED -> textBlock(text, size, false, Layout.Alignment.ALIGN_CENTER, w, PAD, fontNum)
             PrintFormat.BOXED -> {
                 val style = (payload.borderStyle ?: "line").lowercase()
-                if (style == "line" || style.isBlank()) boxed(text, w, size)
-                else asciiBoxed(text, w, style, size)
+                if (style == "line" || style.isBlank()) boxed(text, w, size, fontNum)
+                else asciiBoxed(text, w, style, size, fontNum)
             }
-            PrintFormat.HEADER_BODY -> headerBody(payload.title, text, w, size)
-            PrintFormat.BANNER -> banner(payload.title ?: text, w)
-            PrintFormat.LIST -> listFormat(payload, w, size)
-            else -> textBlock(text, size, false, Layout.Alignment.ALIGN_NORMAL, w)
+            PrintFormat.HEADER_BODY -> headerBody(payload.title, text, w, size, fontNum)
+            PrintFormat.BANNER -> banner(payload.title ?: text, w, fontNum)
+            PrintFormat.LIST -> listFormat(payload, w, size, fontNum)
+            else -> textBlock(text, size, false, Layout.Alignment.ALIGN_NORMAL, w, PAD, fontNum)
         }
 
         val imgBmp = decodeImageField(payload, w) ?: return textBmp
@@ -114,9 +145,9 @@ object ReceiptRenderer {
 
     private fun textBlock(
         text: String, size: Float, bold: Boolean, align: Layout.Alignment, w: Int,
-        innerPad: Float = PAD,
+        innerPad: Float = PAD, fontNum: Int = 1,
     ): Bitmap {
-        val paint = textPaint(size, bold)
+        val paint = textPaint(size, bold, fontNum)
         val innerWidth = (w - 2 * innerPad).toInt().coerceAtLeast(1)
         val layout = staticLayout(text, paint, innerWidth, align)
         val h = (layout.height + 2 * innerPad).toInt().coerceAtLeast(1)
@@ -129,9 +160,9 @@ object ReceiptRenderer {
         return bmp
     }
 
-    private fun boxed(text: String, w: Int, size: Float = TEXT_SIZE): Bitmap {
+    private fun boxed(text: String, w: Int, size: Float = TEXT_SIZE, fontNum: Int = 1): Bitmap {
         val pad = PAD + BORDER + 6f
-        val paint = textPaint(size, false)
+        val paint = textPaint(size, false, fontNum)
         val innerWidth = (w - 2 * pad).toInt().coerceAtLeast(1)
         val layout = staticLayout(text, paint, innerWidth, Layout.Alignment.ALIGN_NORMAL)
         val h = (layout.height + 2 * pad).toInt().coerceAtLeast(1)
@@ -152,23 +183,23 @@ object ReceiptRenderer {
         return bmp
     }
 
-    private fun headerBody(title: String?, body: String, w: Int, size: Float = TEXT_SIZE): Bitmap {
+    private fun headerBody(title: String?, body: String, w: Int, size: Float = TEXT_SIZE, fontNum: Int = 1): Bitmap {
         val parts = ArrayList<Bitmap>()
         if (!title.isNullOrBlank()) {
-            parts.add(textBlock(title, titleSize(size), true, Layout.Alignment.ALIGN_CENTER, w, innerPad = PAD))
+            parts.add(textBlock(title, titleSize(size), true, Layout.Alignment.ALIGN_CENTER, w, PAD, fontNum))
             parts.add(dividerBitmap(w))
         }
-        parts.add(textBlock(body, size, false, Layout.Alignment.ALIGN_NORMAL, w))
+        parts.add(textBlock(body, size, false, Layout.Alignment.ALIGN_NORMAL, w, PAD, fontNum))
         return stackVertically(parts, w)
     }
 
-    private fun banner(text: String, w: Int): Bitmap {
+    private fun banner(text: String, w: Int, fontNum: Int = 1): Bitmap {
         val innerWidth = (w - 2 * PAD).toInt().coerceAtLeast(1)
         // Grow the font until any wrapped line would exceed the width, then step back.
         var chosen = 30f
         var size = 30f
         while (size <= 160f) {
-            val paint = textPaint(size, true)
+            val paint = textPaint(size, true, fontNum)
             val layout = staticLayout(text, paint, innerWidth, Layout.Alignment.ALIGN_CENTER)
             var widest = 0f
             for (i in 0 until layout.lineCount) {
@@ -178,17 +209,17 @@ object ReceiptRenderer {
             chosen = size
             size += 4f
         }
-        return textBlock(text, chosen, true, Layout.Alignment.ALIGN_CENTER, w)
+        return textBlock(text, chosen, true, Layout.Alignment.ALIGN_CENTER, w, PAD, fontNum)
     }
 
-    private fun listFormat(payload: PrintPayload, w: Int, size: Float = TEXT_SIZE): Bitmap {
+    private fun listFormat(payload: PrintPayload, w: Int, size: Float = TEXT_SIZE, fontNum: Int = 1): Bitmap {
         val parts = ArrayList<Bitmap>()
         if (!payload.title.isNullOrBlank()) {
-            parts.add(textBlock(payload.title, titleSize(size), true, Layout.Alignment.ALIGN_CENTER, w))
+            parts.add(textBlock(payload.title, titleSize(size), true, Layout.Alignment.ALIGN_CENTER, w, PAD, fontNum))
             parts.add(dividerBitmap(w))
         }
         val items = payload.items ?: emptyList()
-        val paint = textPaint(size, false)
+        val paint = textPaint(size, false, fontNum)
         for (item in items) {
             parts.add(twoColumnRow(item.label ?: "", item.value ?: "", paint, w))
         }
@@ -237,18 +268,53 @@ object ReceiptRenderer {
 
     // ---- primitives ----
 
-    private fun withOptionalTitle(payload: PrintPayload, w: Int, body: () -> Bitmap): Bitmap {
+    private fun withOptionalTitle(payload: PrintPayload, w: Int, fontNum: Int = 1, body: () -> Bitmap): Bitmap {
         val content = body()
         if (payload.title.isNullOrBlank()) return content
-        val title = textBlock(payload.title, TITLE_SIZE, true, Layout.Alignment.ALIGN_CENTER, w)
+        val title = textBlock(payload.title, TITLE_SIZE, true, Layout.Alignment.ALIGN_CENTER, w, PAD, fontNum)
         return stackVertically(listOf(title, dividerBitmap(w), content), w)
     }
 
-    private fun textPaint(size: Float, bold: Boolean): TextPaint {
+    // Alert fonts, selectable by number. Drop TTFs in assets/fonts/ to activate 1/3/4;
+    // until then they fall back to the built-in mono font (2).
+    private val alertFontFiles = mapOf(
+        2 to "Jersey10-Regular.ttf",
+        3 to "Jacquard12-Regular.ttf",
+        4 to "Doto-Regular.ttf",
+    )
+    private var assets: android.content.res.AssetManager? = null
+    private val typefaceCache = HashMap<Int, Typeface>()
+
+    /** Called once from the Application so custom fonts can be loaded from assets/fonts/. */
+    fun loadFonts(context: android.content.Context) {
+        assets = context.applicationContext.assets
+    }
+
+    private fun typefaceFor(fontNum: Int, bold: Boolean): Typeface {
+        // Font 1 (or any number without a bundled file) is the built-in mono font.
+        if (!alertFontFiles.containsKey(fontNum)) {
+            return if (bold) Typeface.create(Typeface.MONOSPACE, Typeface.BOLD) else Typeface.MONOSPACE
+        }
+        typefaceCache[fontNum]?.let { return it }
+        val am = assets
+        val file = alertFontFiles[fontNum]
+        val tf = if (am != null && file != null) {
+            try {
+                Typeface.createFromAsset(am, "fonts/$file")
+            } catch (t: Throwable) {
+                null
+            }
+        } else null
+        val result = tf ?: Typeface.MONOSPACE // missing file -> mono fallback
+        typefaceCache[fontNum] = result
+        return result
+    }
+
+    private fun textPaint(size: Float, bold: Boolean, fontNum: Int = 1): TextPaint {
         return TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             textSize = size
-            typeface = if (bold) Typeface.create(Typeface.MONOSPACE, Typeface.BOLD) else Typeface.MONOSPACE
+            typeface = typefaceFor(fontNum, bold)
         }
     }
 
@@ -279,6 +345,54 @@ object ReceiptRenderer {
         val c = Canvas(bmp)
         c.drawBitmap(content, (w - content.width) / 2f, PAD, null)
         return bmp
+    }
+
+    // ---- MUIE alert envelope ----
+
+    private fun alertEnvelope(payload: PrintPayload, w: Int): Bitmap {
+        val atype = (payload.alertType ?: "alert").trim().uppercase()
+        val message = expandTabs(payload.text ?: "")
+        val service = (payload.service ?: "unknown").trim()
+        val sent = fmtTime(payload.sentAt)
+        val recv = fmtTime((System.currentTimeMillis() / 1000).toString()) // the device's own clock
+        val footer = "$service\nsent: $sent\nrecv: $recv"
+
+        // A single alert_font on the request overrides every per-line font constant.
+        val ov = (payload.font ?: payload.alertFont)?.takeIf { it in 1..4 }
+        fun fnt(default: Int): Int = ov ?: default
+
+        val parts = listOf(
+            textBlock("ALERT", ALERT_SIZE, true, Layout.Alignment.ALIGN_CENTER, w, ALERT_HEADER_SPACING, fnt(ALERT_FONT)),
+            textBlock(atype, ALERT_TYPE_SIZE, true, Layout.Alignment.ALIGN_CENTER, w, ALERT_HEADER_SPACING, fnt(ALERT_TYPE_FONT)),
+            dashSpacer(w, fnt(ALERT_DASH_FONT)),
+            textBlock(message, ALERT_TEXT_SIZE, false, Layout.Alignment.ALIGN_CENTER, w, PAD, fnt(ALERT_TEXT_FONT)),
+            dashSpacer(w, fnt(ALERT_DASH_FONT)),
+            starSpacer(w, fnt(ALERT_STAR_FONT)),
+            textBlock(footer, ALERT_FOOTER_SIZE, false, Layout.Alignment.ALIGN_CENTER, w, ALERT_FOOTER_SPACING, fnt(ALERT_FOOTER_FONT)),
+            starSpacer(w, fnt(ALERT_STAR_FONT)),
+            textBlock("Thank you for using M.U.I.E.", ALERT_THANKS_SIZE, false, Layout.Alignment.ALIGN_CENTER, w, ALERT_FOOTER_SPACING, fnt(ALERT_THANKS_FONT)),
+            textBlock("(Minimal Unified Incident Envelope)", ALERT_EXPANSION_SIZE, false, Layout.Alignment.ALIGN_CENTER, w, ALERT_FOOTER_SPACING, fnt(ALERT_EXPANSION_FONT)),
+        )
+        return stackVertically(parts, w)
+    }
+
+    private fun dashSpacer(w: Int, fontNum: Int = ALERT_DASH_FONT): Bitmap {
+        val paint = textPaint(ALERT_DASH_SIZE, false, fontNum)
+        val cw = paint.measureText("M").coerceAtLeast(1f)
+        val cols = ((w - 2 * PAD) / cw).toInt().coerceAtLeast(1)
+        val s = "- ".repeat(cols / 2 + 1).substring(0, cols).trimEnd()
+        return textBlock(s, ALERT_DASH_SIZE, false, Layout.Alignment.ALIGN_CENTER, w, PAD, fontNum)
+    }
+
+    private fun starSpacer(w: Int, fontNum: Int = ALERT_STAR_FONT): Bitmap =
+        textBlock("* * * * * * *", ALERT_STAR_SIZE, false, Layout.Alignment.ALIGN_CENTER, w, PAD, fontNum)
+
+    /** Format an epoch-seconds value (as string) to a readable time; pass through non-numeric. */
+    private fun fmtTime(value: String?): String {
+        if (value.isNullOrBlank()) return "—"
+        val epoch = value.toDoubleOrNull() ?: return value
+        return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date((epoch * 1000).toLong()))
     }
 
     private fun stackVertically(parts: List<Bitmap>, w: Int): Bitmap {

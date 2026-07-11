@@ -22,6 +22,8 @@ cases = [
     {"format": "boxed", "text": "bad style falls back", "border_style": "nonsense"},
     {"format": "plain", "text": 'top\n@#@divider="-="\nbottom'},
     {"format": "plain", "text": "cat:\n@#@cats"},
+    {"format": "alert", "alert_type": "crit", "text": "Disk full on /var", "service": "diskmon.service", "sent_at": 1783732000},
+    {"format": "alert", "alert_type": "warning", "text": "short", "service": "svc"},
     {"format": "header_body", "title": "RECEIPT", "text": "Body text here"},
     {"format": "banner", "title": "DOOR OPEN"},
     {"format": "list", "title": "Groceries", "items": [{"label": "Milk", "value": "x2"}, {"label": "Eggs", "value": "x12"}]},

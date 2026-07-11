@@ -114,6 +114,13 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
         entry("image", listOf("image|image_raw_bitmap"), "Pure image print, full width.")
         entry("barcode", listOf("text", "barcode_type"), "CODE128, EAN13, UPC_A, CODE39, ITF, …")
         entry("qrcode", listOf("text"), "QR code auto-scaled to width.")
+        entry(
+            "alert",
+            listOf("alert_type", "text|message", "service", "sent_at?", "alert_font?"),
+            "MUIE envelope: ALERT / type / message / service + times. alert_type: " +
+                "emerg, alert, crit, err, warning, notice, info, debug. " +
+                "alert_font: 1=mono (default), 2=Jersey10, 3=Jacquard12, 4=Doto.",
+        )
 
         val borderStyles = listOf(
             "line", "dashes", "equals", "asterisk", "at", "hash",

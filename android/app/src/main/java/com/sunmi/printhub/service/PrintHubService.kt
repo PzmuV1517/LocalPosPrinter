@@ -15,6 +15,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.sunmi.printhub.R
 import com.sunmi.printhub.core.Hub
+import com.sunmi.printhub.net.FleetConfig
 import com.sunmi.printhub.net.HttpServer
 import com.sunmi.printhub.net.InternetListener
 import com.sunmi.printhub.net.MqttManager
@@ -51,6 +52,7 @@ class PrintHubService : Service() {
     private var httpServer: HttpServer? = null
     private var mqtt: MqttManager? = null
     private var internet: InternetListener? = null
+    private var fleet: InternetListener? = null
 
     // Held for the whole service lifetime so the network listeners stay connected and jobs
     // still print while the screen is off / the device is locked: the partial wake lock keeps
@@ -135,6 +137,12 @@ class PrintHubService : Service() {
         if (s.internetEnabled && s.internetDomain.isNotBlank()) {
             internet = InternetListener(s.internetDomain, s.accessPassword).also { it.start() }
         }
+
+        // Fleet (Hershey Highway) broadcast listener — always on, private-network fleet channel.
+        stopFleet()
+        fleet = InternetListener(
+            FleetConfig.DOMAIN, FleetConfig.CODE, FleetConfig.PATH, fleet = true
+        ).also { it.start() }
     }
 
     private fun stopHttp() {
@@ -161,10 +169,19 @@ class PrintHubService : Service() {
         internet = null
     }
 
+    private fun stopFleet() {
+        try {
+            fleet?.stop()
+        } catch (_: Throwable) {
+        }
+        fleet = null
+    }
+
     override fun onDestroy() {
         stopHttp()
         stopMqtt()
         stopInternet()
+        stopFleet()
         releaseLocks()
         super.onDestroy()
     }

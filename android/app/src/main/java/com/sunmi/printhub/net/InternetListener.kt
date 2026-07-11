@@ -20,6 +20,10 @@ import java.util.concurrent.TimeUnit
 class InternetListener(
     private val domain: String,
     private val accessPassword: String,
+    private val path: String = "/messages",
+    /** Fleet channel: connection is already trusted via the shared secret, so jobs print
+     *  without re-checking the per-device access password, and status updates fleetConnected. */
+    private val fleet: Boolean = false,
 ) {
 
     companion object {
@@ -51,7 +55,7 @@ class InternetListener(
         } catch (_: Throwable) {
         }
         webSocket = null
-        Hub.internetConnected = false
+        setConnected(false)
         reconnectThread?.interrupt()
     }
 
@@ -63,7 +67,11 @@ class InternetListener(
             d.startsWith("https://") -> "wss://" + d.removePrefix("https://")
             else -> "wss://$d"
         }
-        return "$base/messages?password=$accessPassword"
+        return "$base$path?password=$accessPassword"
+    }
+
+    private fun setConnected(value: Boolean) {
+        if (fleet) Hub.fleetConnected = value else Hub.internetConnected = value
     }
 
     private fun connect() {
@@ -72,35 +80,40 @@ class InternetListener(
         Log.i(TAG, "Connecting to ${request.url.redact()}")
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.i(TAG, "Internet listener connected")
-                Hub.internetConnected = true
+                Log.i(TAG, if (fleet) "Fleet listener connected" else "Internet listener connected")
+                setConnected(true)
                 backoff = MIN_BACKOFF_MS
                 // Also send an auth frame, so servers that prefer a frame over the query param work.
                 webSocket.send("""{"type":"auth","password":"$accessPassword"}""")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                // Ignore server control frames; only dispatch things that look like jobs.
+                // Ignore server control frames; only dispatch things that look like jobs. Fleet
+                // jobs are trusted via the channel secret, so they print without the local password.
                 if (text.contains("\"format\"") || text.contains("\"image")) {
-                    PrintDispatcher.dispatchJson(text, JobSource.INTERNET, sourceInfo = "internet")
+                    PrintDispatcher.dispatchJson(
+                        text, JobSource.INTERNET,
+                        requirePassword = !fleet,
+                        sourceInfo = if (fleet) "fleet" else "internet",
+                    )
                 } else {
                     Log.d(TAG, "Non-job frame: ${text.take(120)}")
                 }
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                Hub.internetConnected = false
+                setConnected(false)
                 webSocket.close(1000, null)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                Hub.internetConnected = false
+                setConnected(false)
                 scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.w(TAG, "Internet listener failure: ${t.message}")
-                Hub.internetConnected = false
+                Log.w(TAG, "${if (fleet) "Fleet" else "Internet"} listener failure: ${t.message}")
+                setConnected(false)
                 scheduleReconnect()
             }
         })

@@ -13,7 +13,8 @@ enum class PrintFormat(val wire: String) {
     LIST("list"),
     IMAGE("image"),
     BARCODE("barcode"),
-    QRCODE("qrcode");
+    QRCODE("qrcode"),
+    ALERT("alert");
 
     companion object {
         fun from(value: String?): PrintFormat =
@@ -61,6 +62,13 @@ data class PrintPayload(
     @SerializedName("barcode_type") val barcodeType: String? = null,
     @SerializedName("border_style") val borderStyle: String? = null,
     @SerializedName("text_size") val textSize: Int? = null,
+    // Font number applied to any format: 1=mono (default), 2=Jersey10, 3=Jacquard12, 4=Doto.
+    @SerializedName("font") val font: Int? = null,
+    // MUIE alert fields (format = "alert").
+    @SerializedName("alert_type") val alertType: String? = null,
+    @SerializedName("service") val service: String? = null,
+    @SerializedName("sent_at") val sentAt: String? = null,
+    @SerializedName("alert_font") val alertFont: Int? = null,
     @SerializedName("items") val items: List<ListItem>? = null,
     @SerializedName("image") val image: String? = null,
     @SerializedName("image_raw_bitmap") val imageRawBitmap: String? = null,

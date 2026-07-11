@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Sunmi Print Hub</title>
   <style>
+    /* Alert fonts, served from /fonts, so the picker can preview each one. */
+    @font-face { font-family:'Jersey10';   src:url('/fonts/Jersey10-Regular.ttf'); }
+    @font-face { font-family:'Jacquard12'; src:url('/fonts/Jacquard12-Regular.ttf'); }
+    @font-face { font-family:'Doto';       src:url('/fonts/Doto-Regular.ttf'); }
     :root { --fg:#1b1b1b; --muted:#666; --line:#ddd; --brand:#1565C0; }
     * { box-sizing: border-box; }
     body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
@@ -60,13 +64,43 @@
           <option value="barcode">Barcode</option>
           <option value="qrcode">QR Code</option>
           <option value="image">Image</option>
+          <option value="alert">Alert (MUIE)</option>
         </select>
+
+        <div data-field="alert_type" class="hidden">
+          <label>Alert type (severity)</label>
+          <select id="alert_type">
+            <option value="emerg">emerg — system unusable</option>
+            <option value="alert">alert — action required now</option>
+            <option value="crit">crit — critical condition</option>
+            <option value="err">err — error</option>
+            <option value="warning" selected>warning — warning</option>
+            <option value="notice">notice — normal but significant</option>
+            <option value="info">info — informational</option>
+            <option value="debug">debug — debug</option>
+          </select>
+        </div>
+
+        <div data-field="service" class="hidden">
+          <label>Issuing service</label>
+          <input id="service" type="text" placeholder="e.g. backup.service" />
+        </div>
+
 
         <label>Print mode</label>
         <select id="print_mode">
           <option value="receipt">Receipt</option>
           <option value="label">Label</option>
         </select>
+
+        <label>Font (applies to all formats)</label>
+        <select id="font">
+          <option value="1" style="font-family:monospace">1 — Mono (default)</option>
+          <option value="2" style="font-family:'Jersey10'">2 — Jersey 10</option>
+          <option value="3" style="font-family:'Jacquard12'">3 — Jacquard 12</option>
+          <option value="4" style="font-family:'Doto'">4 — Doto</option>
+        </select>
+        <div id="fontSample" class="hint" style="font-size:22px; color:#222; margin-top:6px">Sample — ALERT 0123</div>
 
         <div data-field="title">
           <label>Title</label>
@@ -184,6 +218,7 @@
       barcode:     { title:true,  text:true,  text_size:false, barcode_type:true,  items:false, image:false },
       qrcode:      { title:true,  text:true,  text_size:false, barcode_type:false, items:false, image:false },
       image:       { title:false, text:false, text_size:false, barcode_type:false, items:false, image:true },
+      alert:       { title:false, text:true,  text_size:false, barcode_type:false, items:false, image:false, alert_type:true, service:true },
     };
 
     function applyVisibility() {
@@ -220,7 +255,7 @@
     // ---- payload assembly (shared by preview + print) ----
     function buildPayload() {
       const fmt = $('format').value;
-      const p = { format: fmt, print_mode: $('print_mode').value };
+      const p = { format: fmt, print_mode: $('print_mode').value, font: parseInt($('font').value, 10) };
       const vis = FIELD_VISIBILITY[fmt];
       if (vis.title) p.title = $('title').value;
       if (vis.text)  p.text  = $('text').value;
@@ -228,6 +263,11 @@
       if (vis.barcode_type) p.barcode_type = $('barcode_type').value;
       if (vis.border_style) p.border_style = $('border_style').value;
       if (vis.items) p.items = collectItems();
+      if (vis.alert_type) {
+        p.alert_type = $('alert_type').value;
+        p.service = $('service').value;
+        p.sent_at = Math.floor(Date.now() / 1000); // sender (browser) time
+      }
       if (vis.image && imageB64) {
         p.image = imageB64;
         p.image_position = $('image_position').value;
@@ -339,6 +379,12 @@
     $('refreshBtn').addEventListener('click', doPreview);
     $('printBtn').addEventListener('click', doPrint);
     $('checkBtn').addEventListener('click', doCheck);
+
+    // Reflect the chosen alert font in the sample line (the live preview also re-renders).
+    const FONT_FAMILY = { '1': 'monospace', '2': 'Jersey10', '3': 'Jacquard12', '4': 'Doto' };
+    function updateFontSample() { $('fontSample').style.fontFamily = FONT_FAMILY[$('font').value] || 'monospace'; }
+    $('font').addEventListener('change', updateFontSample);
+    updateFontSample();
 
     applyVisibility();
     addItemRow('Milk', 'x2');

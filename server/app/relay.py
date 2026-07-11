@@ -28,6 +28,8 @@ class Relay:
     clients: List[Client] = field(default_factory=list)
     # Each pending entry is (job, on_delivered) so the delivery hook survives queueing.
     pending: Dict[str, Deque[Tuple[dict, Optional[Callable[[], Any]]]]] = field(default_factory=dict)
+    # Fleet-broadcast pool: every app's always-on "Hershey Highway" listener lands here.
+    fleet_clients: List[Client] = field(default_factory=list)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def register(self, ws: WebSocket, device_id: str = "default") -> Client:
@@ -45,6 +47,33 @@ class Relay:
 
     def is_connected(self, device_id: str = "default") -> bool:
         return any(c.device_id == device_id for c in self.clients)
+
+    # ---- fleet broadcast ----
+    async def register_fleet(self, ws: WebSocket) -> Client:
+        client = Client(ws=ws, device_id="fleet")
+        async with self._lock:
+            self.fleet_clients.append(client)
+        return client
+
+    async def unregister_fleet(self, client: Client) -> None:
+        async with self._lock:
+            if client in self.fleet_clients:
+                self.fleet_clients.remove(client)
+
+    def fleet_count(self) -> int:
+        return len(self.fleet_clients)
+
+    async def broadcast_fleet(self, job: dict) -> int:
+        """Send one job to every device on the fleet channel. Returns how many got it."""
+        text = json.dumps(job)
+        sent = 0
+        for client in list(self.fleet_clients):
+            try:
+                await client.ws.send_text(text)
+                sent += 1
+            except Exception:
+                await self.unregister_fleet(client)
+        return sent
 
     async def submit(self, job: dict, device_id: str = "default", on_delivered=None) -> bool:
         """Send a job to the target device, or queue it if none is connected.

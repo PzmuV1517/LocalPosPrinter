@@ -23,6 +23,7 @@ import os
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
 
 from . import render as rendermod
 from .passwords import Store
@@ -32,11 +33,20 @@ from .relay import relay
 MASTER_PASSWORD = os.environ.get("ACCESS_PASSWORD") or os.environ.get("ACCESS_CODE", "1234")
 PRINT_WIDTH = int(os.environ.get("PRINT_WIDTH", "384"))
 
+# Fleet "Hershey Highway" broadcast channel. Every app's always-on fleet listener connects
+# to /hersheyhighway with this shared static secret; the admin can broadcast to all of them.
+# It's baked into the app, so treat it as "has the app => on the fleet", not strong auth.
+# Overridable here so you can rotate it (must match the app's FleetConfig.CODE).
+FLEET_CODE = os.environ.get("FLEET_CODE", "HersheyHighway42069")
+
 _HERE = os.path.dirname(__file__)
 _STATIC_DIR = os.path.join(os.path.dirname(_HERE), "static")
 
 store = Store(MASTER_PASSWORD)
 app = FastAPI(title="Sunmi Print Hub — companion server")
+
+# Serve the alert font files so the web UI can preview each font in the picker.
+app.mount("/fonts", StaticFiles(directory=os.path.join(_HERE, "fonts")), name="fonts")
 
 
 def _label_for(payload: dict) -> str:
@@ -44,14 +54,18 @@ def _label_for(payload: dict) -> str:
     return (payload.get("title") or payload.get("text") or payload.get("format") or "print")[:60]
 
 
+# The UI is edited often; tell the browser never to serve a cached copy so changes show up.
+_NO_CACHE = {"Cache-Control": "no-store, max-age=0"}
+
+
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(os.path.join(_STATIC_DIR, "index.html"))
+    return FileResponse(os.path.join(_STATIC_DIR, "index.html"), headers=_NO_CACHE)
 
 
 @app.get("/admin")
 async def admin_page() -> FileResponse:
-    return FileResponse(os.path.join(_STATIC_DIR, "admin.html"))
+    return FileResponse(os.path.join(_STATIC_DIR, "admin.html"), headers=_NO_CACHE)
 
 
 @app.get("/status")
@@ -103,7 +117,29 @@ def _usage_message(unlimited: bool, remaining) -> str:
 
 @app.post("/print")
 async def do_print(request: Request) -> JSONResponse:
-    payload = await request.json()
+    return await _print_payload(await request.json())
+
+
+@app.post("/alert")
+async def do_alert(request: Request) -> JSONResponse:
+    """MUIE alert intake for LAN services. Renders the envelope and relays it to the device.
+
+    Body: { password, alert_type|type, message|text, service, sent_at, print_mode? }
+    """
+    body = await request.json()
+    payload = {
+        "password": body.get("password") or body.get("code"),
+        "format": "alert",
+        "alert_type": body.get("alert_type") or body.get("type") or "alert",
+        "text": body.get("message") or body.get("text") or "",
+        "service": body.get("service") or "",
+        "sent_at": body.get("sent_at") or body.get("timestamp"),
+        "print_mode": body.get("print_mode", "receipt"),
+    }
+    return await _print_payload(payload)
+
+
+async def _print_payload(payload: dict) -> JSONResponse:
     # Accept 'password'; fall back to legacy 'code'.
     provided = (payload.get("password") or payload.get("code") or "").strip()
 
@@ -193,8 +229,35 @@ async def admin_state(request: Request) -> JSONResponse:
             "history": store.list_history(),
             "passwords": store.list_passwords(),
             "device_connected": relay.is_connected(),
+            "fleet_count": relay.fleet_count(),
         }
     )
+
+
+@app.post("/admin/broadcast")
+async def admin_broadcast(request: Request) -> JSONResponse:
+    """Broadcast one job to every printer on the fleet channel. Requires the master
+    password (to be in admin) AND the app's static bypass code."""
+    body = await request.json()
+    if not _require_master(body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if (body.get("bypass_code") or "") != FLEET_CODE:
+        return JSONResponse({"error": "Invalid bypass code"}, status_code=403)
+
+    payload = dict(body.get("payload") or {})
+    payload.pop("password", None)  # fleet devices trust the channel; no per-job password
+    payload.pop("code", None)
+
+    count = await relay.broadcast_fleet(payload)
+    store.add_history(
+        {
+            "format": payload.get("format", "?"),
+            "label": _label_for(payload),
+            "user": "fleet-broadcast",
+            "status": f"broadcast x{count}",
+        }
+    )
+    return JSONResponse({"ok": True, "delivered": count, "fleet_count": relay.fleet_count()})
 
 
 @app.post("/admin/create")
@@ -246,3 +309,24 @@ async def messages(ws: WebSocket) -> None:
         pass
     finally:
         await relay.unregister(client)
+
+
+@app.websocket("/hersheyhighway")
+async def hersheyhighway(ws: WebSocket) -> None:
+    """Fleet broadcast channel. Every app connects here with the shared static bypass code;
+    the admin can then broadcast one job to all of them at once."""
+    provided = ws.query_params.get("password") or ws.query_params.get("code")
+    if provided != FLEET_CODE:
+        await ws.close(code=4401)
+        return
+    await ws.accept()
+    client = await relay.register_fleet(ws)
+    try:
+        while True:
+            await ws.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        await relay.unregister_fleet(client)

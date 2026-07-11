@@ -172,6 +172,10 @@ class MqttManager(private val context: Context) {
             append("{% if data.image is defined %},\"image\":{{ data.image | to_json }}{% endif %}")
             append("{% if data.image_raw_bitmap is defined %},\"image_raw_bitmap\":{{ data.image_raw_bitmap | to_json }}{% endif %}")
             append("{% if data.image_position is defined %},\"image_position\":{{ data.image_position | to_json }}{% endif %}")
+            append("{% if data.font is defined %},\"font\":{{ data.font | to_json }}{% endif %}")
+            append("{% if data.alert_type is defined %},\"alert_type\":{{ data.alert_type | to_json }}{% endif %}")
+            append("{% if data.service is defined %},\"service\":{{ data.service | to_json }}{% endif %}")
+            append("{% if data.sent_at is defined %},\"sent_at\":{{ data.sent_at | to_json }}{% endif %}")
             append("}")
         }
         val notifyCfg = JSONObject()

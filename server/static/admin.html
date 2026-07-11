@@ -78,6 +78,52 @@
       </div>
 
       <div class="card">
+        <h2>Broadcast to fleet <span class="muted" id="fleetState"></span></h2>
+        <div class="muted" style="margin-bottom:8px">Sends one message to every printer on the Hershey Highway channel.</div>
+        <div class="row">
+          <div>
+            <label>Type</label>
+            <select id="bcFormat">
+              <option value="plain">Text</option>
+              <option value="alert">Alert (MUIE)</option>
+            </select>
+          </div>
+          <div>
+            <label>Font</label>
+            <select id="bcFont">
+              <option value="1">1 — Mono</option>
+              <option value="2">2 — Jersey 10</option>
+              <option value="3">3 — Jacquard 12</option>
+              <option value="4">4 — Doto</option>
+            </select>
+          </div>
+          <div id="bcAlertType" style="display:none">
+            <label>Alert type</label>
+            <select id="bcType">
+              <option>emerg</option><option>alert</option><option>crit</option><option>err</option>
+              <option selected>warning</option><option>notice</option><option>info</option><option>debug</option>
+            </select>
+          </div>
+          <div id="bcServiceWrap" style="display:none">
+            <label>Service</label>
+            <input id="bcService" type="text" placeholder="e.g. hq" />
+          </div>
+        </div>
+        <label>Message</label>
+        <input id="bcText" type="text" placeholder="Message to print on every printer" />
+        <div class="row" style="margin-top:10px">
+          <div>
+            <label>Bypass code (app static code)</label>
+            <input id="bcBypass" type="password" placeholder="required to broadcast" />
+          </div>
+          <div style="flex:0 0 auto; align-self:flex-end">
+            <button id="broadcastBtn" class="danger">Broadcast</button>
+          </div>
+        </div>
+        <div id="bcMsg" style="font-size:13px; min-height:18px; margin-top:8px"></div>
+      </div>
+
+      <div class="card">
         <h2>Active passwords <span class="muted" id="deviceState"></span></h2>
         <div class="scroll">
           <table>
@@ -137,6 +183,8 @@
       const { ok, data } = await api('/admin/state');
       if (!ok) return;
       $('deviceState').textContent = data.device_connected ? '· device connected' : '· no device connected';
+      const fc = data.fleet_count || 0;
+      $('fleetState').textContent = `· ${fc} printer${fc === 1 ? '' : 's'} on the fleet`;
 
       $('pwBody').innerHTML = (data.passwords || []).map(p => {
         const status = p.revoked ? '<span class="pill off">revoked</span>'
@@ -183,9 +231,32 @@
       }
     }
 
+    function syncBcFields() {
+      const isAlert = $('bcFormat').value === 'alert';
+      $('bcAlertType').style.display = isAlert ? '' : 'none';
+      $('bcServiceWrap').style.display = isAlert ? '' : 'none';
+    }
+
+    async function broadcast() {
+      const fmt = $('bcFormat').value;
+      const payload = { format: fmt, text: $('bcText').value, font: parseInt($('bcFont').value, 10) };
+      if (fmt === 'alert') {
+        payload.alert_type = $('bcType').value;
+        payload.service = $('bcService').value || 'home';
+        payload.sent_at = Math.floor(Date.now() / 1000);
+      }
+      const { ok, data } = await api('/admin/broadcast', { bypass_code: $('bcBypass').value, payload });
+      const m = $('bcMsg');
+      if (ok) { m.style.color = '#2E7D32'; m.textContent = `Broadcast to ${data.delivered} printer(s)`; refresh(); }
+      else { m.style.color = '#C62828'; m.textContent = data.error || 'Broadcast failed'; }
+    }
+
     $('loginBtn').addEventListener('click', login);
     $('master').addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
     $('createBtn').addEventListener('click', create);
+    $('bcFormat').addEventListener('change', syncBcFields);
+    $('broadcastBtn').addEventListener('click', broadcast);
+    syncBcFields();
     setInterval(() => { if (!$('portal').classList.contains('hidden')) refresh(); }, 8000);
   </script>
 </body>
