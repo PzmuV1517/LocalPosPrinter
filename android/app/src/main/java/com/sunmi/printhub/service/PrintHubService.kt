@@ -133,7 +133,7 @@ class PrintHubService : Service() {
         // Internet listener
         stopInternet()
         if (s.internetEnabled && s.internetDomain.isNotBlank()) {
-            internet = InternetListener(s.internetDomain, s.accessCode).also { it.start() }
+            internet = InternetListener(s.internetDomain, s.accessPassword).also { it.start() }
         }
     }
 

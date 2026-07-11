@@ -159,10 +159,10 @@ class MqttManager(private val context: Context) {
 
     private fun publishHaDiscovery() {
         // Notify entity — maps HA's title+message straight onto our title/text fields, with
-        // the access code baked into the command_template so notify.sunmi_printhub just works.
-        val code = settings.accessCode
+        // the access password baked into the command_template so notify.sunmi_printhub just works.
+        val pw = settings.accessPassword
         val commandTemplate = buildString {
-            append("{\"code\":\"").append(code).append("\",")
+            append("{\"password\":\"").append(pw).append("\",")
             append("\"format\":\"{{ data.format | default('plain') }}\",")
             append("\"print_mode\":\"{{ data.print_mode | default('receipt') }}\",")
             append("\"title\":{{ (title if title is defined and title else '') | to_json }},")

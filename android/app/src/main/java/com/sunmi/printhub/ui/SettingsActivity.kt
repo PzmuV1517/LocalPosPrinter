@@ -31,8 +31,8 @@ class SettingsActivity : AppCompatActivity() {
         loadInto()
 
         binding.regenButton.setOnClickListener {
-            binding.accessCodeInput.setText(Hub.settings.regenerateAccessCode())
-            toast("New access code generated")
+            binding.accessPasswordInput.setText(Hub.settings.regenerateAccessPassword())
+            toast("New access password generated")
         }
         binding.batteryButton.setOnClickListener { requestIgnoreBattery() }
         binding.saveButton.setOnClickListener { saveAndRestart() }
@@ -47,7 +47,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun loadInto() {
         val s = Hub.settings
-        binding.accessCodeInput.setText(s.accessCode)
+        binding.accessPasswordInput.setText(s.accessPassword)
         binding.widthInput.setText(s.printWidthPx.toString())
         binding.defaultModeSpinner.setSelection(modes.indexOf(s.defaultPrintMode).coerceAtLeast(0))
 
@@ -70,7 +70,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun saveAndRestart() {
         val s = Hub.settings
-        s.accessCode = binding.accessCodeInput.text.toString().trim().ifEmpty { s.accessCode }
+        s.accessPassword = binding.accessPasswordInput.text.toString().trim().ifEmpty { s.accessPassword }
         s.printWidthPx = binding.widthInput.text.toString().toIntOrNull()?.coerceIn(64, 1024) ?: 384
         s.defaultPrintMode = modes[binding.defaultModeSpinner.selectedItemPosition]
 

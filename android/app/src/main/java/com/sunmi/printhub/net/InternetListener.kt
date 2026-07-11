@@ -13,13 +13,13 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Outbound WebSocket client to the companion server's /messages relay. Connects to
- * wss://<domain>/messages?code=<access-code>, then sits and listens for pushed jobs.
+ * wss://<domain>/messages?password=<access-password>, then sits and listens for pushed jobs.
  * Reconnects with exponential backoff — this is an always-on listener, not something
  * to babysit.
  */
 class InternetListener(
     private val domain: String,
-    private val accessCode: String,
+    private val accessPassword: String,
 ) {
 
     companion object {
@@ -63,7 +63,7 @@ class InternetListener(
             d.startsWith("https://") -> "wss://" + d.removePrefix("https://")
             else -> "wss://$d"
         }
-        return "$base/messages?code=$accessCode"
+        return "$base/messages?password=$accessPassword"
     }
 
     private fun connect() {
@@ -76,7 +76,7 @@ class InternetListener(
                 Hub.internetConnected = true
                 backoff = MIN_BACKOFF_MS
                 // Also send an auth frame, so servers that prefer a frame over the query param work.
-                webSocket.send("""{"type":"auth","code":"$accessCode"}""")
+                webSocket.send("""{"type":"auth","password":"$accessPassword"}""")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {

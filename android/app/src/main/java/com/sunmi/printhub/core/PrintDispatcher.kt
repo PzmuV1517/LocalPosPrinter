@@ -25,16 +25,16 @@ object PrintDispatcher {
     )
 
     /**
-     * @param requireCode local on-device prints pass false; all network channels pass true.
-     * @param codeOverride e.g. the HTTP X-Access-Code header, checked if the body has no code.
+     * @param requirePassword local on-device prints pass false; all network channels pass true.
+     * @param passwordOverride e.g. the HTTP X-Access-Password header, checked if the body has none.
      * @param sourceInfo e.g. remote IP, recorded on rejects for the log view only.
      */
     @Synchronized
     fun dispatch(
         payload: PrintPayload,
         source: JobSource,
-        requireCode: Boolean = true,
-        codeOverride: String? = null,
+        requirePassword: Boolean = true,
+        passwordOverride: String? = null,
         sourceInfo: String? = null,
     ): Result {
         val jobLog = Hub.jobLog
@@ -42,9 +42,9 @@ object PrintDispatcher {
         val format = payload.formatEnum.wire
 
         // --- auth ---
-        if (requireCode) {
-            val provided = payload.code ?: codeOverride
-            if (provided.isNullOrEmpty() || provided != settings.accessCode) {
+        if (requirePassword) {
+            val provided = payload.effectivePassword ?: passwordOverride
+            if (provided.isNullOrEmpty() || provided != settings.accessPassword) {
                 val err = "Unauthorized" + (sourceInfo?.let { " from $it" } ?: "")
                 val id = jobLog.insert(source, format, payload.title, payload.text, JobStatus.REJECTED, err)
                 Log.w(TAG, "Rejected $source job: $err")
@@ -95,7 +95,7 @@ object PrintDispatcher {
     fun dispatchJson(
         json: String,
         source: JobSource,
-        codeOverride: String? = null,
+        passwordOverride: String? = null,
         sourceInfo: String? = null,
     ): Result {
         val payload = try {
@@ -104,6 +104,6 @@ object PrintDispatcher {
             val id = Hub.jobLog.insert(source, "?", null, null, JobStatus.FAILED, "Bad JSON: ${t.message}")
             return Result(false, JobStatus.FAILED, id, "?", "Bad JSON")
         }
-        return dispatch(payload, source, requireCode = true, codeOverride = codeOverride, sourceInfo = sourceInfo)
+        return dispatch(payload, source, requirePassword = true, passwordOverride = passwordOverride, sourceInfo = sourceInfo)
     }
 }

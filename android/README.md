@@ -42,7 +42,8 @@ Install to a connected device:
 ## Channels
 
 - **HTTP** (default `:8080`): `POST /print`, `GET /status`, `GET /formats`.
-  Access code via `X-Access-Code` header or `code` field. Cleartext HTTP is expected on API 25.
+  Password via `X-Access-Password` header or `password` field (legacy `X-Access-Code`/`code`
+  still accepted). Cleartext HTTP is expected on API 25.
 - **MQTT**: subscribes `<prefix>print`, publishes `<prefix>status` (retained, LWT `offline`)
   and `<prefix>lastjob`. Publishes Home Assistant discovery under `homeassistant/…`
   (a `notify` entity with the access code baked into its `command_template`, and a last-job `sensor`).

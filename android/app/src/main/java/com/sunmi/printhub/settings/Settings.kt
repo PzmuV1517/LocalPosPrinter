@@ -14,15 +14,15 @@ class Settings(context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("printhub", Context.MODE_PRIVATE)
 
-    // ---- access code ----
-    var accessCode: String
-        get() = prefs.getString(K_CODE, null) ?: regenerateAccessCode()
-        set(v) = prefs.edit().putString(K_CODE, v).apply()
+    // ---- access password ----
+    var accessPassword: String
+        get() = prefs.getString(K_PASSWORD, null) ?: regenerateAccessPassword()
+        set(v) = prefs.edit().putString(K_PASSWORD, v).apply()
 
-    fun regenerateAccessCode(): String {
-        val code = (100000 + Random.nextInt(900000)).toString()
-        prefs.edit().putString(K_CODE, code).apply()
-        return code
+    fun regenerateAccessPassword(): String {
+        val pw = (100000 + Random.nextInt(900000)).toString()
+        prefs.edit().putString(K_PASSWORD, pw).apply()
+        return pw
     }
 
     // ---- print ----
@@ -91,7 +91,7 @@ class Settings(context: Context) {
         if (v.isBlank()) "sunmi/printhub/" else if (v.endsWith("/")) v else "$v/"
 
     companion object {
-        private const val K_CODE = "access_code"
+        private const val K_PASSWORD = "access_password"
         private const val K_WIDTH = "print_width"
         private const val K_DEFAULT_MODE = "default_print_mode"
         private const val K_HTTP_ON = "http_enabled"

@@ -15,9 +15,9 @@ import org.json.JSONObject
  * Embedded LAN HTTP server. Cleartext HTTP is intentional — the target device is
  * Android 7.1 (API 25) where cleartext is allowed by default; see README.
  *
- *  POST /print    JSON body, access code via X-Access-Code header or "code" field.
- *  GET  /status   health check, no code required.
- *  GET  /formats   self-describing schema, no code required.
+ *  POST /print    JSON body, password via X-Access-Password header or "password" field.
+ *  GET  /status   health check, no password required.
+ *  GET  /formats   self-describing schema, no password required.
  */
 class HttpServer(port: Int) : NanoHTTPD(port) {
 
@@ -52,11 +52,12 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
         val body = files["postData"] ?: ""
         if (body.isBlank()) return json(Response.Status.BAD_REQUEST, errorBody("Empty body"))
 
-        val headerCode = session.headers["x-access-code"]
+        // Prefer X-Access-Password; still accept the legacy X-Access-Code header.
+        val headerPassword = session.headers["x-access-password"] ?: session.headers["x-access-code"]
         val ip = session.headers["http-client-ip"] ?: session.remoteIpAddress
 
         val result = PrintDispatcher.dispatchJson(
-            body, JobSource.HTTP, codeOverride = headerCode, sourceInfo = ip
+            body, JobSource.HTTP, passwordOverride = headerPassword, sourceInfo = ip
         )
 
         val status = when {
@@ -124,7 +125,7 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
             .put("image_positions", JSONArray(listOf("top", "bottom")))
             .put("border_styles", JSONArray(borderStyles))
             .put("inline_tags", JSONArray(listOf("@#@divider=\"<pattern>\"", "@#@cats")))
-            .put("auth", "X-Access-Code header or 'code' field")
+            .put("auth", "X-Access-Password header or 'password' field")
         return json(Response.Status.OK, obj.toString())
     }
 

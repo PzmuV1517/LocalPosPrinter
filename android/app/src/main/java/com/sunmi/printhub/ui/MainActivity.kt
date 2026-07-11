@@ -104,7 +104,7 @@ class MainActivity : AppCompatActivity() {
     private fun doPrint() {
         val payload = buildPayload()
         io.execute {
-            val result = PrintDispatcher.dispatch(payload, JobSource.LOCAL, requireCode = false)
+            val result = PrintDispatcher.dispatch(payload, JobSource.LOCAL, requirePassword = false)
             main.post {
                 toast("Print ${result.status.wire}" + (result.error?.let { ": $it" } ?: ""))
             }

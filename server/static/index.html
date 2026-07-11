@@ -38,9 +38,12 @@
   </style>
 </head>
 <body>
-  <header>
-    <h1>Sunmi Print Hub</h1>
-    <div class="status" id="connStatus">checking device…</div>
+  <header style="display:flex; justify-content:space-between; align-items:center">
+    <div>
+      <h1>Sunmi Print Hub</h1>
+      <div class="status" id="connStatus">checking device…</div>
+    </div>
+    <a href="/admin" style="color:#fff; font-size:13px; opacity:.9">Admin →</a>
   </header>
 
   <div class="wrap">
@@ -124,8 +127,12 @@
           <div class="hint">Keep source images near 384px wide so payloads stay small.</div>
         </div>
 
-        <label>Access code</label>
-        <input id="code" type="text" placeholder="required to print" />
+        <label>Password</label>
+        <div class="row">
+          <input id="password" type="text" placeholder="required to print" style="flex:2" />
+          <button class="secondary" id="checkBtn" type="button" style="flex:1">Check</button>
+        </div>
+        <div id="checkResult" class="hint"></div>
 
         <div class="row" style="margin-top:16px">
           <button class="secondary" id="refreshBtn" type="button">Refresh preview</button>
@@ -251,17 +258,37 @@
     // ---- print ----
     async function doPrint() {
       const payload = buildPayload();
-      payload.code = $('code').value;
-      if (!payload.code) { setResult('Access code required', false); return; }
+      payload.password = $('password').value;
+      if (!payload.password) { setResult('Password required', false); return; }
       try {
         const resp = await fetch('/print', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         const data = await resp.json();
-        if (resp.ok) setResult(data.message || 'Sent', true);
-        else setResult(data.error || 'Print failed', false);
+        if (resp.ok) {
+          const usage = data.unlimited ? '' : ` (${data.usage_message})`;
+          setResult((data.message || 'Sent') + usage, true);
+        } else {
+          setResult(data.error || 'Print failed', false);
+        }
       } catch (e) { setResult('Print failed: ' + e, false); }
+    }
+
+    // ---- check password ----
+    async function doCheck() {
+      const pw = $('password').value;
+      if (!pw) { $('checkResult').textContent = 'Enter a password to check'; return; }
+      try {
+        const resp = await fetch('/check', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw }),
+        });
+        const data = await resp.json();
+        const el = $('checkResult');
+        el.textContent = data.message;
+        el.style.color = data.valid ? '#2E7D32' : '#C62828';
+      } catch (e) { $('checkResult').textContent = 'Check failed: ' + e; }
     }
 
     function setResult(msg, ok) {
@@ -311,6 +338,7 @@
     $('addItem').addEventListener('click', () => { addItemRow(); schedulePreview(); });
     $('refreshBtn').addEventListener('click', doPreview);
     $('printBtn').addEventListener('click', doPrint);
+    $('checkBtn').addEventListener('click', doCheck);
 
     applyVisibility();
     addItemRow('Milk', 'x2');

@@ -51,6 +51,8 @@ data class ListItem(
  * Parsed with Gson; unknown fields are ignored.
  */
 data class PrintPayload(
+    @SerializedName("password") val password: String? = null,
+    // Legacy field name; still accepted so older callers keep working.
     @SerializedName("code") val code: String? = null,
     @SerializedName("format") val format: String? = null,
     @SerializedName("print_mode") val printMode: String? = null,
@@ -64,6 +66,9 @@ data class PrintPayload(
     @SerializedName("image_raw_bitmap") val imageRawBitmap: String? = null,
     @SerializedName("image_position") val imagePosition: String? = null,
 ) {
+    /** The access password, preferring the new field but accepting the legacy 'code'. */
+    val effectivePassword: String? get() = password ?: code
+
     val formatEnum: PrintFormat get() = PrintFormat.from(format)
     val printModeEnum: PrintMode get() = PrintMode.from(printMode)
     val imagePositionEnum: ImagePosition get() = ImagePosition.from(imagePosition)

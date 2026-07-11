@@ -12,7 +12,7 @@ import asyncio
 import json
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Deque, Dict, List, Optional
+from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
 
 from fastapi import WebSocket
 
@@ -26,7 +26,8 @@ class Client:
 @dataclass
 class Relay:
     clients: List[Client] = field(default_factory=list)
-    pending: Dict[str, Deque[dict]] = field(default_factory=dict)
+    # Each pending entry is (job, on_delivered) so the delivery hook survives queueing.
+    pending: Dict[str, Deque[Tuple[dict, Optional[Callable[[], Any]]]]] = field(default_factory=dict)
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def register(self, ws: WebSocket, device_id: str = "default") -> Client:
@@ -45,22 +46,27 @@ class Relay:
     def is_connected(self, device_id: str = "default") -> bool:
         return any(c.device_id == device_id for c in self.clients)
 
-    async def submit(self, job: dict, device_id: str = "default") -> bool:
+    async def submit(self, job: dict, device_id: str = "default", on_delivered=None) -> bool:
         """Send a job to the target device, or queue it if none is connected.
+
+        [on_delivered], if given, is called exactly once when the job is actually handed to
+        a device — immediately here, or later from _flush — never if it only gets queued.
+        This lets callers deduct a password use only when the print really goes through.
 
         Returns True if delivered immediately, False if queued.
         """
         target = next((c for c in self.clients if c.device_id == device_id), None)
         if target is None:
-            self.pending.setdefault(device_id, deque()).append(job)
+            self.pending.setdefault(device_id, deque()).append((job, on_delivered))
             return False
         try:
             await target.ws.send_text(json.dumps(job))
+            self._fire(on_delivered)
             return True
         except Exception:
             # Delivery failed mid-flight; drop the socket and queue for next connect.
             await self.unregister(target)
-            self.pending.setdefault(device_id, deque()).append(job)
+            self.pending.setdefault(device_id, deque()).append((job, on_delivered))
             return False
 
     async def _flush(self, device_id: str) -> None:
@@ -71,12 +77,22 @@ class Relay:
         if target is None:
             return
         while queue:
-            job = queue[0]
+            job, on_delivered = queue[0]
             try:
                 await target.ws.send_text(json.dumps(job))
                 queue.popleft()
+                self._fire(on_delivered)
             except Exception:
                 break
+
+    @staticmethod
+    def _fire(on_delivered) -> None:
+        if on_delivered is None:
+            return
+        try:
+            on_delivered()
+        except Exception:
+            pass
 
 
 relay = Relay()

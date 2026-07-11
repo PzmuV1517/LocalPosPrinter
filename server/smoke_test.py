@@ -6,7 +6,7 @@ from PIL import Image
 from fastapi.testclient import TestClient
 
 from app import render as r
-from app.main import app, ACCESS_CODE
+from app.main import app, MASTER_PASSWORD
 
 # A tiny PNG to feed the image path.
 _buf = io.BytesIO()
@@ -56,11 +56,11 @@ resp = client.post("/preview", json={"format": "barcode", "text": "x"})
 assert resp.status_code == 400, resp.status_code
 print("  ok  POST /preview bad -> 400")
 
-resp = client.post("/print", json={"format": "plain", "text": "hi", "code": "wrong"})
+resp = client.post("/print", json={"format": "plain", "text": "hi", "password": "wrong"})
 assert resp.status_code == 401, resp.status_code
 print("  ok  POST /print wrong code -> 401")
 
-resp = client.post("/print", json={"format": "plain", "text": "hi", "code": ACCESS_CODE})
+resp = client.post("/print", json={"format": "plain", "text": "hi", "password": MASTER_PASSWORD})
 assert resp.status_code == 200, resp.status_code
 data = resp.json()
 assert data["queued"] is True  # no device connected in this test
