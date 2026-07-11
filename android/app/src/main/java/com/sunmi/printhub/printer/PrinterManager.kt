@@ -111,6 +111,14 @@ class PrinterManager(private val appContext: Context) {
         Log.i(TAG, "printBitmap: ${bitmap.width}x${bitmap.height} label=$label")
         val cb = LatchCallback()
         return try {
+            // Reset the printer first — clears any stuck state (e.g. a buffer transaction left
+            // open by a previous force-close), which otherwise swallows prints with no callback.
+            try {
+                svc.printerInit(NoopCallback)
+            } catch (t: Throwable) {
+                Log.w(TAG, "printerInit failed: ${t.message}")
+            }
+
             if (label) {
                 try {
                     svc.labelLocate()
@@ -120,10 +128,7 @@ class PrinterManager(private val appContext: Context) {
                         "Label mode not supported by this printer/firmware (${e.javaClass.simpleName})"
                     )
                 }
-            }
-            svc.printBitmap(bitmap, cb)
-            Log.d(TAG, "printBitmap call returned (no exception); awaiting printer callback")
-            if (label) {
+                svc.printBitmap(bitmap, cb)
                 try {
                     svc.labelOutput()
                 } catch (e: Throwable) {
@@ -131,7 +136,14 @@ class PrinterManager(private val appContext: Context) {
                     return PrintResult.Failure("Label output failed: ${e.message}")
                 }
             } else {
+                // Receipt: print inside a fresh buffer transaction and COMMIT it, so the content
+                // actually flushes to the head. A bare printBitmap() can just buffer and never
+                // print (accepted, no callback) on this firmware.
+                svc.enterPrinterBuffer(true)   // clean=true wipes any stuck buffer
+                svc.printBitmap(bitmap, cb)
                 svc.lineWrap(feedLines, NoopCallback)
+                svc.exitPrinterBuffer(true)    // commit=true -> print the buffered content
+                Log.d(TAG, "printBitmap: buffer committed; awaiting printer callback")
             }
             awaitResult(cb, "printBitmap")
         } catch (e: RemoteException) {
