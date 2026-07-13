@@ -154,6 +154,11 @@ WorkingDirectory=/path/to/server
 Restart=always
 ```
 
+> **Do not use uvicorn's `--reload` in production.** It runs two processes (a reloader that owns
+> the socket + a worker), which breaks the in-place restart/update buttons with
+> `[Errno 98] Address already in use`. Drop `--reload` and rely on the restart button (or a
+> `git pull` + restart) instead.
+
 ## Frontend (dashboard)
 
 The dashboard is a **React + TypeScript (Vite)** app in `server/web/`. The built bundle is

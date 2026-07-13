@@ -405,13 +405,22 @@ def _run_update() -> dict:
 def _restart_process() -> None:
     cmd = os.environ.get("UPDATE_RESTART_CMD")
     try:
-        log.info("Self-update: restarting (%s)", cmd or "os.execv in place")
         if cmd:
+            log.info("Restart via UPDATE_RESTART_CMD")
             subprocess.Popen(cmd, shell=True)
-        else:
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            return
+        if "--reload" in sys.argv:
+            # Under uvicorn --reload the socket is owned by a separate reloader process, so
+            # re-exec'ing would spawn a second reloader and fail to bind (Address already in
+            # use). Exit instead and let the supervisor relaunch us. REQUIRES a supervisor that
+            # restarts on exit (systemd Restart=always) — ideally drop the dev-only --reload flag.
+            log.warning("Restart under --reload: exiting for the supervisor to relaunch. "
+                        "Remove --reload and set Restart=always for clean restarts.")
+            os._exit(3)
+        log.info("Restart in place (os.execv)")
+        os.execv(sys.executable, [sys.executable] + sys.argv)
     except Exception as exc:
-        log.error("Self-update restart failed: %s", exc)
+        log.error("Restart failed: %s", exc)
 
 
 @app.post("/config/restart")
