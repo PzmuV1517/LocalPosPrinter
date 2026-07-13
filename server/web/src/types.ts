@@ -1,0 +1,67 @@
+export type Severity =
+  | 'emerg' | 'alert' | 'crit' | 'err' | 'warning' | 'notice' | 'info' | 'debug'
+
+export interface LogRow {
+  id: number
+  device_id: string
+  severity: Severity
+  sev_num: number
+  service: string
+  message: string
+  meta: Record<string, unknown>
+  source_ip: string
+  printed: boolean
+  ts: number
+}
+
+export interface Device {
+  id: string
+  name: string
+  created_at: number
+  last_seen_at: number | null
+  meta: Record<string, unknown>
+  revoked: boolean
+}
+
+export type SevCounts = Record<string, Partial<Record<Severity, number>>>
+
+export interface LogsResponse {
+  logs: LogRow[]
+  devices: Device[]
+  counts: SevCounts
+  device_connected: boolean
+}
+
+export interface TempPassword {
+  user: string
+  max_uses: number
+  used: number
+  remaining: number
+  revoked: boolean
+  active: boolean
+}
+
+export interface HistoryRow {
+  timestamp: number
+  format: string
+  label: string
+  user: string
+  status: string
+}
+
+export interface ServerConfig {
+  username: string
+  print_width: number
+  auto_print_min_sev: Severity
+  auto_print_max_per_min: number
+  log_retention_days: number
+}
+
+export interface UpdateResult {
+  ok: boolean
+  changed: boolean
+  before?: string
+  after?: string
+  restarting: boolean
+  log: string
+}

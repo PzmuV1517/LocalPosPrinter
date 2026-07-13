@@ -50,7 +50,8 @@ _DEF_RETENTION = int(os.environ.get("LOG_RETENTION_DAYS", "30"))
 
 _HERE = os.path.dirname(__file__)
 _SERVER_DIR = os.path.dirname(_HERE)
-_STATIC_DIR = os.path.join(_SERVER_DIR, "static")
+# Built React/Vite bundle (committed to the repo so git-pull self-update needs no Node).
+_WEB_DIST = os.path.join(_SERVER_DIR, "web", "dist")
 
 # ---------------------------------------------------------------------------
 # Wiring
@@ -77,6 +78,11 @@ _auto_print_times: deque[float] = deque()
 
 app = FastAPI(title="Watchtower — Sunmi Print Hub")
 app.mount("/fonts", StaticFiles(directory=os.path.join(_HERE, "fonts")), name="fonts")
+_ASSETS_DIR = os.path.join(_WEB_DIST, "assets")
+if os.path.isdir(_ASSETS_DIR):
+    app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
+else:  # dist not built/committed — the SPA won't load, but the API still runs
+    log.warning("Web bundle missing at %s — run `npm --prefix web run build`.", _WEB_DIST)
 
 _NO_CACHE = {"Cache-Control": "no-store, max-age=0"}
 
@@ -151,12 +157,12 @@ def _usage_message(unlimited: bool, remaining) -> str:
 # ---------------------------------------------------------------------------
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(os.path.join(_STATIC_DIR, "watchtower.html"), headers=_NO_CACHE)
+    return FileResponse(os.path.join(_WEB_DIST, "index.html"), headers=_NO_CACHE)
 
 
 @app.get("/watchtower")
 async def watchtower_alias() -> FileResponse:
-    return FileResponse(os.path.join(_STATIC_DIR, "watchtower.html"), headers=_NO_CACHE)
+    return FileResponse(os.path.join(_WEB_DIST, "index.html"), headers=_NO_CACHE)
 
 
 @app.get("/status")

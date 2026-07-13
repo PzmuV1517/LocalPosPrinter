@@ -23,3 +23,7 @@ server/data/
 # OS / editor
 .DS_Store
 .vscode/
+
+# Frontend build
+server/web/node_modules/
+server/web/.vite/

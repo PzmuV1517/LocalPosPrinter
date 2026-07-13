@@ -134,6 +134,21 @@ WorkingDirectory=/path/to/server
 Restart=always
 ```
 
+## Frontend (dashboard)
+
+The dashboard is a **React + TypeScript (Vite)** app in `server/web/`. The built bundle is
+committed to `server/web/dist/` and served by FastAPI, so deploys and the git-pull self-update
+need **no Node on the server**. To change the UI:
+
+```bash
+cd server/web
+npm install
+npm run dev      # local dev against a running uvicorn (proxies the API)
+npm run build    # rebuild dist/ — commit the result so the server picks it up
+```
+
+`node_modules/` is gitignored; `dist/` is committed on purpose.
+
 ## Updating (self-update button)
 
 **Settings → Server updates → Pull latest & restart** runs `git pull --ff-only origin main`,
