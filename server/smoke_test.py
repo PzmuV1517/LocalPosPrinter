@@ -169,11 +169,29 @@ resp = client.post("/watchtower/logs", json={"max_sev": "err"}, headers=AUTH)
 assert all(l["sev_num"] <= 3 for l in resp.json()["logs"])
 print("  ok  /watchtower/logs severity filter")
 
+# ---- delete is refused for an active device, allowed once revoked ----
+resp = client.post("/watchtower/devices/create", json={"device_id": "tmp-dev"}, headers=AUTH)
+assert resp.status_code == 200
+assert client.post("/watchtower/devices/delete", json={"device_id": "tmp-dev"}, headers=AUTH).status_code == 400
+assert client.post("/watchtower/devices/revoke", json={"device_id": "tmp-dev"}, headers=AUTH).json()["ok"]
+assert client.post("/watchtower/devices/delete", json={"device_id": "tmp-dev"}, headers=AUTH).json()["ok"]
+devs = client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()["devices"]
+assert not any(d["id"] == "tmp-dev" for d in devs)
+print("  ok  device delete: 400 while active, 200 once revoked, then gone")
+
 # ---- revoke the device; its signatures stop working ----
 assert client.post("/watchtower/devices/revoke", json={"device_id": "kitchen-pi"}, headers=AUTH).json()["ok"]
 body = json.dumps({"severity": "info", "message": "after revoke"}).encode()
 assert client.post("/ingest", data=body, headers=sign("POST", "/ingest", body)).status_code == 401
 print("  ok  revoked device -> 401")
+
+# ---- Scout self-hosting: source + generated installer ----
+r_scout = client.get("/scout.py")
+assert r_scout.status_code == 200 and "class Scout" in r_scout.text
+inst = client.get("/install-scout?device_id=kitchen-pi")
+assert inst.status_code == 200 and "scout set-secret" in inst.text and "kitchen-pi" in inst.text
+assert "__BASE__" not in inst.text and "__DEVICE__" not in inst.text  # placeholders substituted
+print("  ok  /scout.py + /install-scout served")
 
 # ---- temp password still works end to end ----
 resp = client.post("/admin/create", json={"password": MASTER_PASSWORD, "user": "guest", "max_uses": 2}, headers=AUTH)
@@ -199,5 +217,9 @@ assert client.post("/config/set", json={"new_master_password": "brand-new-pw"}, 
 assert client.post("/session/login", json={"username": USERNAME, "password": MASTER_PASSWORD}).status_code == 401
 assert client.post("/session/login", json={"username": USERNAME, "password": "brand-new-pw"}).status_code == 200
 print("  ok  master password change takes effect")
+
+# ---- self-update endpoint is auth-gated (don't trigger a real pull here) ----
+assert client.post("/config/update", json={}).status_code == 401
+print("  ok  /config/update requires auth")
 
 print("\nALL SMOKE TESTS PASSED")

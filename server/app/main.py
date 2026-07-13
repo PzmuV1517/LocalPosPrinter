@@ -19,11 +19,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
+import sys
+import threading
 import time
 from collections import deque
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import crypto
@@ -46,7 +49,8 @@ _DEF_FUSE = int(os.environ.get("AUTO_PRINT_MAX_PER_MIN", "30"))
 _DEF_RETENTION = int(os.environ.get("LOG_RETENTION_DAYS", "30"))
 
 _HERE = os.path.dirname(__file__)
-_STATIC_DIR = os.path.join(os.path.dirname(_HERE), "static")
+_SERVER_DIR = os.path.dirname(_HERE)
+_STATIC_DIR = os.path.join(_SERVER_DIR, "static")
 
 # ---------------------------------------------------------------------------
 # Wiring
@@ -167,6 +171,76 @@ async def status() -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
+# Scout self-hosting — install the log-shipping client straight from this server, no git clone.
+#   curl -fsSL https://<domain>/install-scout | bash
+# ---------------------------------------------------------------------------
+def _public_base_url(request: Request) -> str:
+    proto = request.headers.get("x-forwarded-proto") or request.url.scheme
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc
+    return f"{proto}://{host}"
+
+
+@app.get("/scout.py")
+async def scout_source() -> FileResponse:
+    return FileResponse(os.path.join(_SERVER_DIR, "scout.py"), media_type="text/x-python", headers=_NO_CACHE)
+
+
+_INSTALL_SCRIPT = r"""#!/usr/bin/env bash
+# Scout installer for Watchtower — downloads the client from your server and gets it ready
+# for a device secret. No git clone, stdlib-only, re-runnable (never clobbers your secret).
+set -e
+BASE="__BASE__"
+DEVICE_ID="__DEVICE__"
+BIN="$HOME/.local/bin"
+LIB="$HOME/.local/share/scout"
+CONF_DIR="$HOME/.config/scout"
+CONF="$CONF_DIR/scout.env"
+
+mkdir -p "$BIN" "$LIB" "$CONF_DIR"
+echo "Downloading scout.py from $BASE ..."
+curl -fsSL "$BASE/scout.py" -o "$LIB/scout.py"
+
+# Config is written once so re-running the installer keeps the secret you put in.
+if [ ! -f "$CONF" ]; then
+  printf 'WATCHTOWER_URL=%s\nSCOUT_DEVICE_ID=%s\nSCOUT_SECRET=\n' "$BASE" "$DEVICE_ID" > "$CONF"
+  chmod 600 "$CONF"
+else
+  echo "Keeping existing config at $CONF"
+fi
+
+cat > "$BIN/scout" <<'LAUNCH'
+#!/usr/bin/env bash
+CONF="$HOME/.config/scout/scout.env"
+[ -f "$CONF" ] && set -a && . "$CONF" && set +a
+_set() { tmp=$(mktemp); grep -v "^$1=" "$CONF" 2>/dev/null > "$tmp" || true; echo "$1=$2" >> "$tmp"; mv "$tmp" "$CONF"; chmod 600 "$CONF"; }
+case "$1" in
+  set-secret) _set SCOUT_SECRET "$2"; echo "Secret saved."; exit 0 ;;
+  set-device) _set SCOUT_DEVICE_ID "$2"; echo "Device id saved."; exit 0 ;;
+esac
+exec python3 "$HOME/.local/share/scout/scout.py" "$@"
+LAUNCH
+chmod +x "$BIN/scout"
+
+echo ""
+echo "Scout installed: $BIN/scout   (config: $CONF)"
+case ":$PATH:" in *":$BIN:"*) ;; *) echo "NOTE: add $BIN to your PATH (e.g. echo 'export PATH=\$HOME/.local/bin:\$PATH' >> ~/.bashrc)";; esac
+echo ""
+echo "Finish setup — paste the secret shown in the Watchtower dashboard:"
+[ -z "$DEVICE_ID" ] && echo "  scout set-device <DEVICE_ID>"
+echo "  scout set-secret <SECRET>"
+echo ""
+echo "Then test:  scout -s info --service test \"hello watchtower\""
+"""
+
+
+@app.get("/install-scout")
+async def install_scout(request: Request) -> PlainTextResponse:
+    device_id = (request.query_params.get("device_id") or "").strip()
+    script = _INSTALL_SCRIPT.replace("__BASE__", _public_base_url(request)).replace("__DEVICE__", device_id)
+    return PlainTextResponse(script, media_type="text/x-shellscript", headers=_NO_CACHE)
+
+
+# ---------------------------------------------------------------------------
 # First-run setup (browser wizard). Refuses once configured.
 # ---------------------------------------------------------------------------
 @app.get("/setup/status")
@@ -257,6 +331,77 @@ async def config_set(request: Request) -> JSONResponse:
         auth.set_password(new_pw)
         log.info("Master password changed via Settings from %s", _client_ip(request))
     return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Self-update — pull the latest main and restart, from the Settings tab.
+# Needs a process supervisor to come back up: run under systemd (Restart=always) or Docker
+# (restart: unless-stopped). Set UPDATE_RESTART_CMD to override the restart (e.g.
+# "sudo systemctl restart watchtower"); otherwise the process re-execs itself in place.
+# ---------------------------------------------------------------------------
+def _repo_root() -> str | None:
+    try:
+        p = subprocess.run(["git", "-C", _SERVER_DIR, "rev-parse", "--show-toplevel"],
+                           capture_output=True, text=True, timeout=10)
+        return p.stdout.strip() if p.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def _run_update() -> dict:
+    root = _repo_root()
+    if not root:
+        return {"ok": False, "changed": False, "restarting": False,
+                "log": "Not a git checkout — self-update is unavailable here."}
+    lines: list[str] = []
+
+    def run(cmd, timeout=300):
+        try:
+            p = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=timeout)
+            lines.append(f"$ {' '.join(cmd)}\n{(p.stdout + p.stderr).strip()}")
+            return p.returncode
+        except Exception as exc:
+            lines.append(f"$ {' '.join(cmd)}\n[error] {exc}")
+            return 1
+
+    before = subprocess.run(["git", "-C", root, "rev-parse", "--short", "HEAD"],
+                            capture_output=True, text=True).stdout.strip()
+    rc = run(["git", "pull", "--ff-only", "origin", "main"], timeout=120)
+    after = subprocess.run(["git", "-C", root, "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True).stdout.strip()
+    changed = before != after
+    if changed:
+        run([sys.executable, "-m", "pip", "install", "-q", "-r",
+             os.path.join(_SERVER_DIR, "requirements.txt")])
+    ok = rc == 0
+    return {"ok": ok, "changed": changed, "before": before, "after": after,
+            "restarting": ok and changed, "log": "\n\n".join(lines)}
+
+
+def _restart_process() -> None:
+    cmd = os.environ.get("UPDATE_RESTART_CMD")
+    try:
+        log.info("Self-update: restarting (%s)", cmd or "os.execv in place")
+        if cmd:
+            subprocess.Popen(cmd, shell=True)
+        else:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+    except Exception as exc:
+        log.error("Self-update restart failed: %s", exc)
+
+
+@app.post("/config/update")
+async def config_update(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    result = await asyncio.to_thread(_run_update)
+    log.info("Self-update requested: changed=%s %s->%s ok=%s",
+             result.get("changed"), result.get("before"), result.get("after"), result.get("ok"))
+    if result.get("restarting"):
+        # Fire after the response has been sent so the client sees the log.
+        threading.Timer(1.5, _restart_process).start()
+    return JSONResponse(result)
 
 
 # ---------------------------------------------------------------------------
@@ -504,6 +649,18 @@ async def watchtower_devices_revoke(request: Request) -> JSONResponse:
     if not _authed_admin(request, body):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     return JSONResponse({"ok": db.revoke_device((body.get("device_id") or "").strip())})
+
+
+@app.post("/watchtower/devices/delete")
+async def watchtower_devices_delete(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    device_id = (body.get("device_id") or "").strip()
+    if not db.delete_device(device_id, require_revoked=True):
+        return JSONResponse({"error": "Device must be revoked before it can be deleted"}, status_code=400)
+    log.info("Device deleted: %s", device_id)
+    return JSONResponse({"ok": True})
 
 
 # ---------------------------------------------------------------------------

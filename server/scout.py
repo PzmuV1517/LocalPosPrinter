@@ -10,7 +10,7 @@ No third-party dependencies — standard library only.
 
 Set up a device in the Watchtower dashboard ("Issue device secret"), then:
 
-    export WATCHTOWER_URL=https://printhub.andreibanu.com
+    export WATCHTOWER_URL=https://watchtower.andreibanu.com
     export SCOUT_DEVICE_ID=kitchen-pi
     export SCOUT_SECRET=sph_xxxxxxxx        # shown once when you issued it
 

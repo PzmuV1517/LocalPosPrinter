@@ -295,6 +295,16 @@
         </div>
         <div id="secretOut"></div>
       </div>
+      <div class="card">
+        <h2>Install a Scout — command generator</h2>
+        <p class="muted" style="font-size:12px;margin:0 0 8px">Enter a device id (or leave blank), then run this on the device — it downloads the client from this server (no git clone) and gets it ready for a secret.</p>
+        <div class="row" style="align-items:flex-end">
+          <div><label>Device id</label><input id="genDevId" placeholder="kitchen-pi" /></div>
+          <button class="ghost" id="copyInstall" style="flex:0 0 auto">Copy</button>
+        </div>
+        <div class="secretbox mono" id="installCmd" style="margin-top:10px"></div>
+        <p class="muted" style="font-size:12px;margin:10px 0 0">Then paste the device's secret (shown once when you issue it): <span class="mono">scout set-secret &lt;SECRET&gt;</span></p>
+      </div>
     </section>
 
     <!-- PASSWORDS -->
@@ -358,6 +368,12 @@
           <button id="cfgPwSave" style="flex:0 0 auto">Update</button>
         </div>
         <div id="cfgPwMsg" class="result"></div>
+      </div>
+      <div class="card">
+        <h2>Server updates</h2>
+        <p class="muted" style="font-size:12px;margin:0 0 10px">Pull the latest code from <span class="mono">main</span> and restart the service — no manual git pull. (The service must run under a supervisor that restarts it: systemd <span class="mono">Restart=always</span> or Docker <span class="mono">restart: unless-stopped</span>.)</p>
+        <button id="updateBtn">Pull latest &amp; restart</button>
+        <pre id="updateLog" class="mono" style="display:none;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:10px;margin-top:10px;font-size:12px;white-space:pre-wrap;max-height:280px;overflow:auto"></pre>
       </div>
     </section>
   </main>
@@ -451,8 +467,11 @@ function deviceCard(d, counts, withActions){
     <div class="muted" style="font-size:11px;margin-top:4px"><span class="dot ${online?'on':''}"></span>${online?'online':'offline'} · ${esc(seen)}</div>
     <div class="sevs">${sevPills(counts[d.id]||{})}</div>
     ${withActions?`<div class="actions">
-      <button class="ghost mini" onclick="rotate('${esc(d.id)}')">Rotate</button>
-      <button class="ghost mini" onclick="revokeDev('${esc(d.id)}')">Revoke</button></div>`:''}
+      <button class="ghost mini" onclick="rotate('${esc(d.id)}')">${d.revoked?'Reactivate':'Rotate'}</button>
+      ${d.revoked
+        ? `<button class="ghost mini" onclick="deleteDev('${esc(d.id)}')">Delete</button>`
+        : `<button class="ghost mini" onclick="revokeDev('${esc(d.id)}')">Revoke</button>`}
+      </div>`:''}
   </div>`;
 }
 function renderLogs(logs){
@@ -488,25 +507,48 @@ async function printLog(id,btn){ btn.disabled=true; btn.textContent='…';
   setTimeout(()=>{ btn.disabled=false; btn.textContent='Print'; refreshLogs(); },1200); }
 
 // ---- DEVICES ----
+function installLine(id){ const q = id ? `?device_id=${encodeURIComponent(id)}` : '';
+  return `curl -fsSL "${location.origin}/install-scout${q}" | bash`; }
+function copyBtn(text){ return `<button class="ghost mini" onclick='copyText(${JSON.stringify(text)},this)'>Copy</button>`; }
+function copyText(text, btn){
+  navigator.clipboard.writeText(text).then(()=>{ if(btn){ const o=btn.textContent; btn.textContent='Copied'; setTimeout(()=>btn.textContent=o,1000); } });
+}
+function secretPanel(id, secret){
+  const setCmd = `scout set-secret ${secret}`;
+  return `<div class="secretbox">
+    <div><b>${esc(id)}</b> secret — copy now, shown once ${copyBtn(secret)}</div>
+    <div style="margin-top:4px">${esc(secret)}</div>
+    <div style="margin-top:12px" class="muted">1) install on the device ${copyBtn(installLine(id))}</div>
+    <div>${esc(installLine(id))}</div>
+    <div style="margin-top:12px" class="muted">2) set the secret ${copyBtn(setCmd)}</div>
+    <div>${esc(setCmd)}</div>
+  </div>`;
+}
+function updateInstallGen(){ $('installCmd').textContent = installLine(($('genDevId').value||'').trim()); }
 async function refreshDevices(){
   const data = await (await api('/watchtower/logs', {limit:1})).json();
   $('devCards').innerHTML = (data.devices||[]).length
     ? (data.devices||[]).map(d=>deviceCard(d, data.counts||{}, true)).join('')
     : '<div class="muted" style="font-size:12px">No devices yet.</div>';
+  updateInstallGen();
 }
 async function createDevice(){
   const id=$('newDevId').value.trim(), name=$('newDevName').value.trim(), out=$('secretOut');
   if(!id){ out.innerHTML='<div class="muted">Enter a device id.</div>'; return; }
   const res=await api('/watchtower/devices/create',{device_id:id,name}); const d=await res.json();
   if(!res.ok){ out.innerHTML=`<div class="muted">${esc(d.error||'failed')}</div>`; return; }
-  out.innerHTML=`<div class="secretbox"><b>${esc(id)}</b> secret — copy now, shown once:<br>${esc(d.secret)}</div>`;
+  out.innerHTML=secretPanel(id, d.secret);
   $('newDevId').value=''; $('newDevName').value=''; refreshDevices();
 }
-async function rotate(id){ if(!confirm('Rotate '+id+'? Its current secret stops working.'))return;
+async function rotate(id){ if(!confirm('Rotate '+id+"? A new secret is issued and the old one stops working."))return;
   const d=await(await api('/watchtower/devices/rotate',{device_id:id})).json();
-  if(d.secret) $('secretOut').innerHTML=`<div class="secretbox"><b>${esc(id)}</b> NEW secret:<br>${esc(d.secret)}</div>`; }
-async function revokeDev(id){ if(!confirm('Revoke '+id+'?'))return;
+  if(d.secret) $('secretOut').innerHTML=secretPanel(id, d.secret); refreshDevices(); }
+async function revokeDev(id){ if(!confirm('Revoke '+id+'? It can no longer authenticate (you can delete it afterwards).'))return;
   await api('/watchtower/devices/revoke',{device_id:id}); refreshDevices(); }
+async function deleteDev(id){ if(!confirm('Permanently delete '+id+'? This removes the device entirely.'))return;
+  const res=await api('/watchtower/devices/delete',{device_id:id});
+  if(!res.ok){ const d=await res.json().catch(()=>({})); alert(d.error||'Delete failed'); }
+  refreshDevices(); }
 
 // ---- PASSWORDS ----
 async function refreshPasswords(){
@@ -554,6 +596,35 @@ async function savePassword(){
   const res=await api('/config/set', body);
   if(res.ok){ m.className='result ok'; m.textContent='Credentials updated.'; $('cfgPw').value=''; }
   else { m.className='result bad'; m.textContent=(await res.json()).error||'Failed.'; }
+}
+
+// ---- self-update ----
+async function doUpdate(){
+  const btn=$('updateBtn'), out=$('updateLog');
+  if(!confirm('Pull the latest code from main and restart the server now?')) return;
+  btn.disabled=true; out.style.display='block'; out.textContent='Updating…';
+  try{
+    const res=await api('/config/update',{}); const d=await res.json();
+    out.textContent=(d.log||'').trim()+'\n\n'+
+      (!d.ok ? '✗ Update failed — see log above.'
+             : d.changed ? `✓ Updated ${d.before} → ${d.after}. Restarting…`
+                         : '✓ Already up to date.');
+    if(d.restarting) waitForRestart(out);
+  }catch(e){
+    // The server likely restarted mid-response.
+    out.textContent+='\n\nServer restarting…'; waitForRestart(out);
+  }
+  btn.disabled=false;
+}
+function waitForRestart(out){
+  let n=0;
+  const iv=setInterval(async()=>{
+    n++;
+    try{ const r=await fetch('/status',{cache:'no-store'});
+      if(r.ok){ clearInterval(iv); out.textContent+='\nServer back up — reloading…'; setTimeout(()=>location.reload(),900); return; }
+    }catch(e){}
+    if(n>60){ clearInterval(iv); out.textContent+='\nStill waiting — reload manually once it’s back.'; }
+  },1000);
 }
 
 // ---- PRINT (compose) ----
@@ -609,9 +680,12 @@ $('refreshLogs').onclick=refreshLogs;
 $('fSev').onchange=refreshLogs;
 ['fDev','fSvc','fSearch'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter')refreshLogs(); }));
 $('createDevBtn').onclick=createDevice;
+$('genDevId').addEventListener('input', updateInstallGen);
+$('copyInstall').onclick=()=>copyText($('installCmd').textContent, $('copyInstall'));
 $('pwCreate').onclick=createPassword;
 $('cfgSave').onclick=saveConfig;
 $('cfgPwSave').onclick=savePassword;
+$('updateBtn').onclick=doUpdate;
 // compose wiring
 const composer=$('tab-print');
 composer.addEventListener('input',()=>{ applyVis(); schedulePreview(); });

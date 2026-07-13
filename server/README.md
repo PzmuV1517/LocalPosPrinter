@@ -9,7 +9,7 @@ FastAPI server that:
    and everything is browsable in the login-gated `/watchtower` dashboard.
 
 Runs on your own infrastructure, behind a TLS-terminating reverse proxy (you're exposed at
-`printhub.andreibanu.com`, so TLS is mandatory — see [Security](#security-model)).
+`watchtower.andreibanu.com`, so TLS is mandatory — see [Security](#security-model)).
 
 ## Run
 
@@ -73,11 +73,23 @@ kept in `localStorage`; the master password is never stored there). Tabs:
 
 ### Scout — the log-shipping client
 
-`scout.py` (stdlib-only) is the agent you drop on any device. Issue it a secret in the dashboard,
-then:
+**Easiest install (no git clone)** — the server hosts the client and a one-line installer. In the
+**Devices** tab, *Issue device secret*, then on the device run the command shown there:
 
 ```bash
-export WATCHTOWER_URL=https://printhub.andreibanu.com
+curl -fsSL "https://watchtower.andreibanu.com/install-scout?device_id=kitchen-pi" | bash
+scout set-secret sph_xxxxxxxx        # the secret shown once in the dashboard
+scout -s err --service test "hello watchtower"
+```
+
+The installer downloads `scout.py` to `~/.local/share/scout`, writes `~/.config/scout/scout.env`
+(with the server URL + device id pre-filled), and drops a `scout` launcher in `~/.local/bin`. It's
+re-runnable and never overwrites a secret you've already set.
+
+**Or use `scout.py` directly** (stdlib-only) — issue a secret in the dashboard, then:
+
+```bash
+export WATCHTOWER_URL=https://watchtower.andreibanu.com
 export SCOUT_DEVICE_ID=kitchen-pi
 export SCOUT_SECRET=sph_xxxxxxxx          # shown once when you issued it
 
@@ -119,7 +131,20 @@ and the defaults; everything is stored in the DB under `DATA_DIR` and is editabl
 Environment=ACCESS_PASSWORD=choose-a-strong-secret
 ExecStart=/path/to/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 WorkingDirectory=/path/to/server
+Restart=always
 ```
+
+## Updating (self-update button)
+
+**Settings → Server updates → Pull latest & restart** runs `git pull --ff-only origin main`,
+`pip install -r requirements.txt` if anything changed, and then restarts the service — no manual
+`git pull`. The dashboard shows the git output and reloads once the server is back (your session
+survives the restart).
+
+For the restart to bring up the new code, the service must run under a supervisor that restarts
+it — systemd with `Restart=always` (above) or Docker `restart: unless-stopped`. By default the
+process re-execs itself in place (works under any supervisor, and standalone in most setups); set
+`UPDATE_RESTART_CMD` to override, e.g. `Environment=UPDATE_RESTART_CMD=sudo systemctl restart watchtower`.
 
 ## Passwords & tabs
 

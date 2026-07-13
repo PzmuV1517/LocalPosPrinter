@@ -232,6 +232,17 @@ class Database:
             self._conn.commit()
             return bool(cur.rowcount)
 
+    def delete_device(self, device_id: str, require_revoked: bool = True) -> bool:
+        """Permanently remove a device. By default only revoked devices can be deleted, so an
+        active device can't vanish by accident. Its past logs are left in place for history."""
+        with self._lock:
+            if require_revoked:
+                cur = self._conn.execute("DELETE FROM devices WHERE id=? AND revoked=1", (device_id,))
+            else:
+                cur = self._conn.execute("DELETE FROM devices WHERE id=?", (device_id,))
+            self._conn.commit()
+            return bool(cur.rowcount)
+
     def list_devices(self) -> List[dict]:
         with self._lock:
             rows = self._conn.execute(
