@@ -26,10 +26,7 @@ from app import render as r  # noqa: E402
 from app.main import app  # noqa: E402
 
 MASTER_PASSWORD = "smoke-master-pw"
-<<<<<<< HEAD
-=======
 USERNAME = "admin"
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
 
 _buf = io.BytesIO()
 Image.new("RGB", (200, 80), (128, 128, 128)).save(_buf, format="PNG")
@@ -60,21 +57,13 @@ print("  ok  /setup/status unconfigured")
 assert client.post("/watchtower/logs", json={}).status_code == 401
 print("  ok  /watchtower/logs pre-setup -> 401")
 
-<<<<<<< HEAD
-resp = client.post("/setup", json={"master_password": MASTER_PASSWORD, "print_width": 384,
-=======
 resp = client.post("/setup", json={"username": USERNAME, "master_password": MASTER_PASSWORD, "print_width": 384,
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
                                     "auto_print_min_sev": "err", "auto_print_max_per_min": 0})
 assert resp.status_code == 200 and resp.json().get("token")
 print("  ok  POST /setup completes")
 assert client.get("/setup/status").json()["configured"] is True
 # Setup refuses to run twice.
-<<<<<<< HEAD
-assert client.post("/setup", json={"master_password": "x"}).status_code == 409
-=======
 assert client.post("/setup", json={"username": "x", "master_password": "yyyy"}).status_code == 409
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
 print("  ok  /setup refuses re-run -> 409")
 
 # ---- rendering endpoints ----
@@ -96,20 +85,12 @@ assert resp.status_code == 200 and resp.json()["queued"] is True
 print("  ok  POST /print master queued (no device)")
 
 # ---- session login gate ----
-<<<<<<< HEAD
-resp = client.post("/session/login", json={"password": "nope"})
-assert resp.status_code == 401
-print("  ok  POST /session/login wrong -> 401")
-
-resp = client.post("/session/login", json={"password": MASTER_PASSWORD})
-=======
 resp = client.post("/session/login", json={"username": USERNAME, "password": "nope"})
 assert resp.status_code == 401
 assert client.post("/session/login", json={"username": "wrong", "password": MASTER_PASSWORD}).status_code == 401
 print("  ok  POST /session/login wrong password/username -> 401")
 
 resp = client.post("/session/login", json={"username": USERNAME, "password": MASTER_PASSWORD})
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
 assert resp.status_code == 200
 TOKEN = resp.json()["token"]
 print("  ok  POST /session/login -> token")
@@ -215,13 +196,8 @@ print("  ok  /config get/set round-trip")
 
 # ---- changing the master password takes effect ----
 assert client.post("/config/set", json={"new_master_password": "brand-new-pw"}, headers=AUTH).json()["ok"]
-<<<<<<< HEAD
-assert client.post("/session/login", json={"password": MASTER_PASSWORD}).status_code == 401
-assert client.post("/session/login", json={"password": "brand-new-pw"}).status_code == 200
-=======
 assert client.post("/session/login", json={"username": USERNAME, "password": MASTER_PASSWORD}).status_code == 401
 assert client.post("/session/login", json={"username": USERNAME, "password": "brand-new-pw"}).status_code == 200
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
 print("  ok  master password change takes effect")
 
 print("\nALL SMOKE TESTS PASSED")

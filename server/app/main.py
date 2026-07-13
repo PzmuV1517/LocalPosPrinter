@@ -56,14 +56,6 @@ box = crypto.SecretBox(DATA_DIR)
 db = Database(DATA_DIR, box, lookup_key=box.derive("temp-password-lookup"))
 auth = Auth(db, session_key=box.derive("session"), skew_secs=HMAC_SKEW_SECS)
 
-<<<<<<< HEAD
-# Bootstrap: if a master password was provided by env and none is stored yet, seed it so a
-# headless deploy skips the wizard. Otherwise the browser setup wizard runs on first visit.
-if not db.is_configured():
-    env_pw = os.environ.get("ACCESS_PASSWORD") or os.environ.get("ACCESS_CODE")
-    if env_pw:
-        auth.set_master(env_pw)
-=======
 # Bootstrap: a headless deploy can skip the wizard by providing BOTH a username and password in
 # the env. With only a password (or neither), the browser setup wizard runs on first visit.
 if not db.is_configured():
@@ -71,16 +63,11 @@ if not db.is_configured():
     env_pw = os.environ.get("ACCESS_PASSWORD") or os.environ.get("ACCESS_CODE")
     if env_user and env_pw:
         auth.set_credentials(env_user, env_pw)
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
         db.set_config("print_width", _DEF_WIDTH)
         db.set_config("auto_print_min_sev", _DEF_MIN_SEV)
         db.set_config("auto_print_max_per_min", _DEF_FUSE)
         db.set_config("log_retention_days", _DEF_RETENTION)
-<<<<<<< HEAD
-        log.info("Bootstrapped master password from environment; setup wizard skipped.")
-=======
         log.info("Bootstrapped master credentials from environment; setup wizard skipped.")
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
 
 _auto_print_times: deque[float] = deque()
 
@@ -192,12 +179,6 @@ async def setup(request: Request) -> JSONResponse:
     if db.is_configured():
         return JSONResponse({"error": "Already configured"}, status_code=409)
     _, body = await _read(request)
-<<<<<<< HEAD
-    pw = (body.get("master_password") or "").strip()
-    if len(pw) < 4:
-        return JSONResponse({"error": "Master password must be at least 4 characters"}, status_code=400)
-    auth.set_master(pw)
-=======
     username = (body.get("username") or "").strip()
     pw = (body.get("master_password") or "").strip()
     if not username:
@@ -205,18 +186,12 @@ async def setup(request: Request) -> JSONResponse:
     if len(pw) < 4:
         return JSONResponse({"error": "Password must be at least 4 characters"}, status_code=400)
     auth.set_credentials(username, pw)
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
     db.set_config("print_width", int(body.get("print_width") or _DEF_WIDTH))
     db.set_config("auto_print_min_sev", (body.get("auto_print_min_sev") or _DEF_MIN_SEV))
     db.set_config("auto_print_max_per_min", int(body.get("auto_print_max_per_min") or _DEF_FUSE))
     db.set_config("log_retention_days", int(body.get("log_retention_days") or _DEF_RETENTION))
-<<<<<<< HEAD
-    log.info("Initial setup completed via web wizard from %s", _client_ip(request))
-    return JSONResponse({"ok": True, "token": auth.login(pw)})
-=======
     log.info("Initial setup completed via web wizard from %s (user=%s)", _client_ip(request), username)
     return JSONResponse({"ok": True, "token": auth.login(username, pw)})
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
 
 
 # ---------------------------------------------------------------------------
@@ -225,17 +200,10 @@ async def setup(request: Request) -> JSONResponse:
 @app.post("/session/login")
 async def session_login(request: Request) -> JSONResponse:
     _, body = await _read(request)
-<<<<<<< HEAD
-    token = auth.login((body.get("password") or "").strip())
-    if not token:
-        log.warning("Failed dashboard login from %s", _client_ip(request))
-        return JSONResponse({"ok": False, "error": "Invalid password"}, status_code=401)
-=======
     token = auth.login((body.get("username") or "").strip(), (body.get("password") or "").strip())
     if not token:
         log.warning("Failed dashboard login from %s", _client_ip(request))
         return JSONResponse({"ok": False, "error": "Invalid username or password"}, status_code=401)
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
     log.info("Dashboard login from %s", _client_ip(request))
     return JSONResponse({"ok": True, "token": token})
 
@@ -255,10 +223,7 @@ async def config_get(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     return JSONResponse(
         {
-<<<<<<< HEAD
-=======
             "username": db.get_config("master_username", ""),
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
             "print_width": print_width(),
             "auto_print_min_sev": db.get_config("auto_print_min_sev", _DEF_MIN_SEV),
             "auto_print_max_per_min": auto_print_fuse(),
@@ -280,14 +245,6 @@ async def config_set(request: Request) -> JSONResponse:
         db.set_config("auto_print_max_per_min", int(body["auto_print_max_per_min"]))
     if body.get("log_retention_days") is not None:
         db.set_config("log_retention_days", int(body["log_retention_days"]))
-<<<<<<< HEAD
-    # Changing the master password requires a valid session (already checked above).
-    new_pw = (body.get("new_master_password") or "").strip()
-    if new_pw:
-        if len(new_pw) < 4:
-            return JSONResponse({"error": "Master password too short"}, status_code=400)
-        auth.set_master(new_pw)
-=======
     # Changing credentials requires a valid session (already checked above).
     new_user = (body.get("new_master_username") or "").strip()
     if new_user:
@@ -298,7 +255,6 @@ async def config_set(request: Request) -> JSONResponse:
         if len(new_pw) < 4:
             return JSONResponse({"error": "Password too short"}, status_code=400)
         auth.set_password(new_pw)
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
         log.info("Master password changed via Settings from %s", _client_ip(request))
     return JSONResponse({"ok": True})
 
