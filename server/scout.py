@@ -42,7 +42,24 @@ import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
-SCOUT_VERSION = "2.1.0"
+SCOUT_VERSION = "2.1.1"
+
+
+def _describe_error(e: Exception) -> str:
+    """A short, human reason why a poll failed — reported on reconnect."""
+    import http.client
+    import socket as _socket
+    import urllib.error
+    if isinstance(e, urllib.error.HTTPError):
+        return f"server returned HTTP {e.code}"
+    reason = getattr(e, "reason", e)
+    if isinstance(reason, (ConnectionResetError, http.client.RemoteDisconnected)):
+        return "server dropped the connection (restart?)"
+    if isinstance(reason, ConnectionRefusedError):
+        return "connection refused (server down)"
+    if isinstance(reason, (TimeoutError, _socket.timeout)) or isinstance(e, (TimeoutError, _socket.timeout)):
+        return "network timeout"
+    return str(reason) or e.__class__.__name__
 
 
 def _sha256_hex(data: bytes) -> str:
@@ -126,24 +143,44 @@ def _self_update(scout: "Scout") -> None:
 
 
 def run_agent(scout: "Scout") -> int:
-    """Persistent daemon: long-poll for commands (heartbeat + remote update). Reconnects fast."""
+    """Persistent daemon: long-poll for commands (heartbeat + remote update). Reconnects fast,
+    and reports its own presence to Watchtower (service ``scout.agent``): a log on start (covers a
+    scout restart) and a log on reconnect that names why the connection was lost and how long it
+    was down (covers a server restart)."""
     import socket
     host = socket.gethostname()
     print(f"scout agent {SCOUT_VERSION} -> {scout.url} as {scout.device_id} (host={host})")
+    scout.log("info", f"scout agent {SCOUT_VERSION} started on {host}", service="scout.agent",
+              meta={"event": "start"})
+    connected = True
+    lost_at = 0.0
+    last_error = ""
     backoff = 1.0
     while True:
         try:
             cmd = scout.poll(host)
+            if not connected:  # we just came back — ack it with the cause + downtime
+                down = int(time.time() - lost_at)
+                scout.log("notice", f"scout agent reconnected after {down}s down; cause: {last_error}",
+                          service="scout.agent", meta={"event": "reconnect", "down_secs": down, "cause": last_error})
+                print(f"reconnected after {down}s ({last_error})")
+                connected = True
             backoff = 1.0
             if isinstance(cmd, dict) and cmd.get("cmd") == "update":
                 print("update command received")
+                scout.log("info", "scout agent applying update from server", service="scout.agent",
+                          meta={"event": "update"})
                 _self_update(scout)  # re-execs on success
         except KeyboardInterrupt:
             return 0
         except Exception as e:  # server down / restart / network blip — re-poll shortly
+            if connected:
+                connected = False
+                lost_at = time.time()
+                last_error = _describe_error(e)
+                print(f"connection lost: {last_error}")
             time.sleep(min(backoff, 15))
             backoff = min(backoff * 2, 15)
-            _ = e
 
 
 def install_service() -> int:
