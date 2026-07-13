@@ -65,20 +65,25 @@ export function SevPills({ sevs }: { sevs: Partial<Record<Severity, number>> }) 
 export function DeviceCard(
   { d, counts, actions }: {
     d: Device; counts: SevCounts;
-    actions?: { onRotate: () => void; onRevoke: () => void; onDelete: () => void }
+    actions?: { onRotate: () => void; onRevoke: () => void; onDelete: () => void; onUpdate: () => void }
   },
 ) {
-  const online = !!d.last_seen_at && Date.now() / 1000 - d.last_seen_at < 120
+  // A live agent (long-poll heartbeat) is the strongest signal; else fall back to last-seen.
+  const online = d.agent_online || (!!d.last_seen_at && Date.now() / 1000 - d.last_seen_at < 120)
+  const version = (d.meta?.scout_version as string) || ''
   return (
     <div className="device">
       <div className="name">{d.name || d.id} {d.revoked && <span className="pill bad">revoked</span>}</div>
       <div className="id mono">{d.id}</div>
       <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-        <span className={`dot ${online ? 'on' : ''}`} />{online ? 'online' : 'offline'} · {d.last_seen_at ? fmtTime(d.last_seen_at) : 'never'}
+        <span className={`dot ${online ? 'on' : ''}`} />
+        {d.agent_online ? 'agent online' : online ? 'online' : 'offline'} · {d.last_seen_at ? fmtTime(d.last_seen_at) : 'never'}
+        {version && <> · scout {version}</>}
       </div>
       <div className="sevs"><SevPills sevs={counts[d.id] || {}} /></div>
       {actions && (
         <div className="actions">
+          {!d.revoked && <button className="ghost mini" onClick={actions.onUpdate}>Update</button>}
           <button className="ghost mini" onClick={actions.onRotate}>{d.revoked ? 'Reactivate' : 'Rotate'}</button>
           {d.revoked
             ? <button className="ghost mini" onClick={actions.onDelete}>Delete</button>

@@ -22,6 +22,11 @@ Set up a device in the Watchtower dashboard ("Issue device secret"), then:
     scout = Scout()                          # reads the env vars above
     scout.log("err", "disk almost full", service="diskmon", meta={"pct": 98})
     scout.err("uncaught exception in worker", service="worker")
+
+Run it as an always-on agent for live presence in the dashboard + remote updates:
+
+    scout agent            # long-polls the server; shows online; obeys "update" commands
+    scout install-service  # install + enable a systemd --user unit that runs `scout agent`
 """
 
 from __future__ import annotations
@@ -37,6 +42,7 @@ import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
+SCOUT_VERSION = "2.1.0"
 
 
 def _sha256_hex(data: bytes) -> str:
@@ -91,9 +97,96 @@ class Scout:
     def info(self, m, **k): return self.log("info", m, **k)
     def debug(self, m, **k): return self.log("debug", m, **k)
 
+    def poll(self, host: str, timeout: float = 35.0):
+        """Long-poll the agent channel. Returns the next command dict, or None on timeout.
+        The poll itself is the heartbeat that keeps this device shown as online."""
+        path = "/agent/poll"
+        body = json.dumps({"version": SCOUT_VERSION, "host": host}).encode()
+        req = urllib.request.Request(self.url + path, data=body, method="POST",
+                                     headers=self._sign("POST", path, body))
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode())
+        return data.get("cmd")
+
+
+def _self_update(scout: "Scout") -> None:
+    """Download the latest scout.py from the server and re-exec the agent."""
+    path = os.path.abspath(__file__)
+    req = urllib.request.Request(scout.url + "/scout.py")
+    data = urllib.request.urlopen(req, timeout=20).read()
+    if b"class Scout" not in data:
+        print("refusing update: downloaded file doesn't look like scout.py", file=sys.stderr)
+        return
+    tmp = path + ".new"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.replace(tmp, path)
+    print(f"updated {path} -> restarting agent")
+    os.execv(sys.executable, [sys.executable, path, "agent"])
+
+
+def run_agent(scout: "Scout") -> int:
+    """Persistent daemon: long-poll for commands (heartbeat + remote update). Reconnects fast."""
+    import socket
+    host = socket.gethostname()
+    print(f"scout agent {SCOUT_VERSION} -> {scout.url} as {scout.device_id} (host={host})")
+    backoff = 1.0
+    while True:
+        try:
+            cmd = scout.poll(host)
+            backoff = 1.0
+            if isinstance(cmd, dict) and cmd.get("cmd") == "update":
+                print("update command received")
+                _self_update(scout)  # re-execs on success
+        except KeyboardInterrupt:
+            return 0
+        except Exception as e:  # server down / restart / network blip — re-poll shortly
+            time.sleep(min(backoff, 15))
+            backoff = min(backoff * 2, 15)
+            _ = e
+
+
+def install_service() -> int:
+    """Write + enable a systemd --user unit so the agent runs continuously."""
+    import subprocess
+    home = os.path.expanduser("~")
+    launcher = os.path.join(home, ".local", "bin", "scout")
+    exec_start = f"{launcher} agent" if os.path.exists(launcher) \
+        else f"{sys.executable} {os.path.abspath(__file__)} agent"
+    unit_dir = os.path.join(home, ".config", "systemd", "user")
+    os.makedirs(unit_dir, exist_ok=True)
+    unit_path = os.path.join(unit_dir, "scout-agent.service")
+    with open(unit_path, "w") as f:
+        f.write(
+            "[Unit]\nDescription=Watchtower Scout agent\nAfter=network-online.target\n\n"
+            f"[Service]\nExecStart={exec_start}\nRestart=always\nRestartSec=3\n\n"
+            "[Install]\nWantedBy=default.target\n"
+        )
+    print(f"wrote {unit_path}")
+    for cmd in (["systemctl", "--user", "daemon-reload"],
+                ["systemctl", "--user", "enable", "--now", "scout-agent"]):
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            print(f"could not run: {' '.join(cmd)}\n  {r.stderr.strip()}", file=sys.stderr)
+            print("Enable it manually: systemctl --user enable --now scout-agent")
+            print("Keep it running after logout: loginctl enable-linger \"$USER\"")
+            return 1
+    print("scout-agent enabled and started.")
+    print("Tip: run `loginctl enable-linger \"$USER\"` so it survives logout.")
+    return 0
+
 
 def _main() -> int:
-    p = argparse.ArgumentParser(description="Ship a log event to Watchtower.")
+    argv = sys.argv[1:]
+    if argv and argv[0] == "agent":
+        return run_agent(Scout())
+    if argv and argv[0] == "install-service":
+        return install_service()
+    if argv and argv[0] in ("--version", "version"):
+        print(SCOUT_VERSION)
+        return 0
+
+    p = argparse.ArgumentParser(description="Ship a log event to Watchtower (or run `scout agent`).")
     p.add_argument("message", help="the log message")
     p.add_argument("--severity", "-s", default="info", choices=SEVERITIES)
     p.add_argument("--service", default="", help="service/source name")

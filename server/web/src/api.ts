@@ -75,6 +75,8 @@ export const createDevice = (device_id: string, name: string) =>
 export const rotateDevice = (device_id: string) => post<{ secret?: string }>('/watchtower/devices/rotate', { device_id })
 export const revokeDevice = (device_id: string) => post('/watchtower/devices/revoke', { device_id })
 export const deleteDevice = (device_id: string) => postRaw('/watchtower/devices/delete', { device_id })
+export const updateScout = (device_id: string) => post<{ queued: number }>('/watchtower/devices/update', { device_id })
+export const updateAllScouts = () => post<{ queued: number }>('/watchtower/devices/update', { all: true })
 
 // ---- passwords / history ----
 export const adminState = () => post<{ history: HistoryRow[]; passwords: TempPassword[] }>('/admin/state', {})

@@ -21,6 +21,7 @@ export interface Device {
   last_seen_at: number | null
   meta: Record<string, unknown>
   revoked: boolean
+  agent_online?: boolean
 }
 
 export type SevCounts = Record<string, Partial<Record<Severity, number>>>

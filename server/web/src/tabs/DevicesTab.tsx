@@ -58,15 +58,27 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
     if (res && !res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Delete failed') }
     load()
   }
+  async function update(id: string) {
+    const d = await guard(api.updateScout(id))
+    if (d) alert(`Update queued for ${id}. It applies on the agent's next poll (needs \`scout agent\` running).`)
+  }
+  async function updateAll() {
+    if (!confirm('Tell every scout agent to pull the latest scout.py and restart?')) return
+    const d = await guard(api.updateAllScouts())
+    if (d) alert(`Update queued for ${d.queued} device(s). Applies as each agent polls.`)
+  }
 
   return (
     <>
       <div className="card">
-        <h2>Registered devices</h2>
-        <div className="cards">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h2 style={{ margin: 0 }}>Registered devices</h2>
+          <button className="ghost mini" onClick={updateAll}>Update all scouts</button>
+        </div>
+        <div className="cards" style={{ marginTop: 12 }}>
           {devices.length
             ? devices.map((d) => <DeviceCard key={d.id} d={d} counts={counts}
-              actions={{ onRotate: () => rotate(d.id), onRevoke: () => revoke(d.id), onDelete: () => del(d.id) }} />)
+              actions={{ onRotate: () => rotate(d.id), onRevoke: () => revoke(d.id), onDelete: () => del(d.id), onUpdate: () => update(d.id) }} />)
             : <div className="muted" style={{ fontSize: 12 }}>No devices yet.</div>}
         </div>
         <div className="row" style={{ marginTop: 14, alignItems: 'flex-end' }}>

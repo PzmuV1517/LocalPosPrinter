@@ -169,6 +169,17 @@ resp = client.post("/watchtower/logs", json={"max_sev": "err"}, headers=AUTH)
 assert all(l["sev_num"] <= 3 for l in resp.json()["logs"])
 print("  ok  /watchtower/logs severity filter")
 
+# ---- agent heartbeat poll + remote update command (kitchen-pi still active) ----
+assert client.post("/agent/poll", json={}).status_code == 401  # unsigned -> immediate 401
+q = client.post("/watchtower/devices/update", json={"device_id": "kitchen-pi"}, headers=AUTH).json()
+assert q["queued"] == 1
+pbody = json.dumps({"version": "test", "host": "h"}).encode()
+poll = client.post("/agent/poll", data=pbody, headers=sign("POST", "/agent/poll", pbody))
+assert poll.status_code == 200 and poll.json()["cmd"] == {"cmd": "update"}
+devs = client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()["devices"]
+assert any(d["id"] == "kitchen-pi" and d.get("agent_online") for d in devs)
+print("  ok  agent poll heartbeat + queued update delivered + shows online")
+
 # ---- delete is refused for an active device, allowed once revoked ----
 resp = client.post("/watchtower/devices/create", json={"device_id": "tmp-dev"}, headers=AUTH)
 assert resp.status_code == 200

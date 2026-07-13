@@ -31,6 +31,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import crypto
 from . import render as rendermod
+from .agents import agents
 from .auth import Auth
 from .db import Database, sev_num
 from .logging_setup import setup as setup_logging
@@ -245,6 +246,10 @@ echo "Finish setup — paste the secret shown in the Watchtower dashboard:"
 echo "  $BIN/scout set-secret <SECRET>"
 echo ""
 echo "Test:  $BIN/scout -s info --service test \"hello watchtower\""
+echo ""
+echo "For live presence in the dashboard + remote updates, run the agent as a service"
+echo "(after set-secret):"
+echo "  $BIN/scout install-service"
 if [ "$ONPATH" = "0" ]; then
   echo ""
   echo "('scout' will be on PATH in new shells. For THIS shell: export PATH=\"$BIN:\$PATH\")"
@@ -566,6 +571,25 @@ def _log_to_alert_payload(device_id: str, severity: str, service: str, message: 
     }
 
 
+@app.post("/agent/poll")
+async def agent_poll(request: Request) -> JSONResponse:
+    """Scout agent heartbeat + command channel (HMAC). Held open until a command is queued
+    for this device, or ~25s. The poll keeps the device marked online."""
+    raw, body = await _read(request)
+    device_id = _hmac_device(request, raw)
+    if not device_id:
+        return JSONResponse({"error": "Unauthorized (HMAC required)"}, status_code=401)
+    meta = {}
+    if body.get("version"):
+        meta["scout_version"] = str(body["version"])
+    if body.get("host"):
+        meta["host"] = str(body["host"])
+    if meta:
+        db.touch_device(device_id, meta=meta)
+    cmd = await agents.wait(device_id, timeout=25.0)
+    return JSONResponse({"cmd": cmd})
+
+
 @app.post("/ingest")
 async def ingest(request: Request) -> JSONResponse:
     raw, body = await _read(request)
@@ -616,8 +640,11 @@ async def watchtower_logs(request: Request) -> JSONResponse:
         service=body.get("service") or None,
         search=(body.get("search") or "").strip() or None,
     )
+    devices = db.list_devices()
+    for d in devices:
+        d["agent_online"] = agents.online(d["id"])
     return JSONResponse(
-        {"logs": logs, "devices": db.list_devices(), "counts": db.severity_counts(),
+        {"logs": logs, "devices": devices, "counts": db.severity_counts(),
          "device_connected": relay.is_connected()}
     )
 
@@ -670,6 +697,26 @@ async def watchtower_devices_revoke(request: Request) -> JSONResponse:
     if not _authed_admin(request, body):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     return JSONResponse({"ok": db.revoke_device((body.get("device_id") or "").strip())})
+
+
+@app.post("/watchtower/devices/update")
+async def watchtower_devices_update(request: Request) -> JSONResponse:
+    """Tell scout agent(s) to pull the latest scout.py from this server and restart. Body:
+    {device_id} for one, or {all: true} for every non-revoked device. Delivered on their next
+    poll (near-instant for connected agents)."""
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if body.get("all"):
+        ids = [d["id"] for d in db.list_devices() if not d["revoked"]]
+    else:
+        did = (body.get("device_id") or "").strip()
+        ids = [did] if did else []
+    if not ids:
+        return JSONResponse({"error": "No target devices"}, status_code=400)
+    n = agents.queue_many(ids, {"cmd": "update"})
+    log.info("Queued scout update for %d device(s): %s", n, ", ".join(ids))
+    return JSONResponse({"ok": True, "queued": n})
 
 
 @app.post("/watchtower/devices/delete")

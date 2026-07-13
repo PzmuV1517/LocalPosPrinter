@@ -109,6 +109,26 @@ scout.info("nightly job finished", service="cron")
 app itself** self-reports its own print failures/rejects automatically once it's paired with a
 device secret (Settings → *Watchtower pairing*).
 
+### Live presence & remote updates (agent mode)
+
+A one-shot Scout only appears "online" right after it sends a log. Run it as an **agent** for
+continuous presence and remote control:
+
+```bash
+scout install-service     # writes + enables a systemd --user unit running `scout agent`
+loginctl enable-linger "$USER"   # (optional) keep it running after you log out
+```
+
+The agent **long-polls** `/agent/poll` (HMAC-signed). That poll is its heartbeat, so the device
+shows **online** without sending a log and — because the poll drops and immediately re-polls on a
+server restart — it's marked alive again within seconds. The dashboard's device card shows *agent
+online* and the running **scout version**.
+
+From the **Devices** tab, **Update** (per device) or **Update all scouts** queues an update; each
+agent picks it up on its next poll (near-instant while connected), pulls the latest `scout.py` from
+this server, and restarts itself. Since the server serves `scout.py` from its own checkout, run the
+server self-update first so scouts pull the newest `main`.
+
 ## Pairing the printer app
 
 1. In **Devices**, *Issue device secret* for the printer (e.g. id `pos-front`). Copy the secret.
