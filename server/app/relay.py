@@ -50,6 +50,16 @@ class Relay:
     def is_connected(self, device_id: str = "default") -> bool:
         return any(c.device_id == device_id for c in self.clients)
 
+    async def close_all(self, code: int = 1012) -> None:
+        """Close every device socket (1012 = Service Restart) so clients reconnect immediately
+        on a graceful shutdown/restart instead of waiting to notice a dead connection."""
+        for client in list(self.clients):
+            try:
+                await client.ws.close(code=code)
+            except Exception:
+                pass
+        self.clients.clear()
+
     async def submit(self, job: dict, device_id: str = "default", on_delivered=None) -> bool:
         """Send a job to the target device, or queue it if none is connected.
 

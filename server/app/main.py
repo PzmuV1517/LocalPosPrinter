@@ -418,6 +418,8 @@ async def config_update(request: Request) -> JSONResponse:
     log.info("Self-update requested: changed=%s %s->%s ok=%s",
              result.get("changed"), result.get("before"), result.get("after"), result.get("ok"))
     if result.get("restarting"):
+        # Tell the printer(s) we're restarting so they reconnect the moment we're back up.
+        await relay.close_all()
         # Fire after the response has been sent so the client sees the log.
         threading.Timer(1.5, _restart_process).start()
     return JSONResponse(result)
@@ -768,3 +770,10 @@ async def _startup() -> None:
     log.info("Watchtower up. configured=%s auto-print<=%s fuse=%d/min retention=%dd",
              db.is_configured(), db.get_config("auto_print_min_sev", _DEF_MIN_SEV),
              auto_print_fuse(), retention_days())
+
+
+@app.on_event("shutdown")
+async def _shutdown() -> None:
+    # On SIGTERM (systemctl restart, docker stop) close device sockets so they reconnect fast.
+    await relay.close_all()
+    log.info("Shutdown: closed device connections")

@@ -28,13 +28,17 @@ class InternetListener(
 
     companion object {
         private const val TAG = "InternetListener"
-        private const val MIN_BACKOFF_MS = 2_000L
-        private const val MAX_BACKOFF_MS = 60_000L
+        private const val MIN_BACKOFF_MS = 1_000L
+        private const val MAX_BACKOFF_MS = 15_000L
     }
 
+    // Short ping interval so a restarted/crashed server (or a proxy that silently drops the
+    // upstream) is noticed within ~10s and we reconnect, instead of appearing offline for a while.
     private val client = OkHttpClient.Builder()
-        .pingInterval(25, TimeUnit.SECONDS)
+        .pingInterval(10, TimeUnit.SECONDS)
+        .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     @Volatile private var webSocket: WebSocket? = null
@@ -122,7 +126,9 @@ class InternetListener(
 
     private fun scheduleReconnect() {
         if (!running) return
-        val delay = backoff
+        // Small jitter avoids every device reconnecting in lock-step after a server restart.
+        val jitter = (Math.random() * 0.3 * backoff).toLong()
+        val delay = backoff + jitter
         backoff = (backoff * 2).coerceAtMost(MAX_BACKOFF_MS)
         reconnectThread = Thread {
             try {
