@@ -740,6 +740,35 @@ async def watchtower_devices_update(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "queued": n})
 
 
+_AGENT_CMDS = {"ping", "restart"}
+
+
+@app.post("/watchtower/devices/command")
+async def watchtower_devices_command(request: Request) -> JSONResponse:
+    """Send a scout agent command: ``ping`` (agent replies with a visible pong log) or
+    ``restart`` (agent re-execs, e.g. to pick up a new local scout.py). {device_id} or {all:true}.
+    Delivered on the agent's next poll (near-instant while connected)."""
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    cmd = (body.get("cmd") or "").strip()
+    if cmd not in _AGENT_CMDS:
+        return JSONResponse({"error": f"cmd must be one of {sorted(_AGENT_CMDS)}"}, status_code=400)
+    if body.get("all"):
+        ids = [d["id"] for d in db.list_devices() if not d["revoked"]]
+    else:
+        did = (body.get("device_id") or "").strip()
+        ids = [did] if did else []
+    if not ids:
+        return JSONResponse({"error": "No target devices"}, status_code=400)
+    payload = {"cmd": cmd}
+    if cmd == "ping":
+        payload["ack"] = True  # manual ping -> agent logs a pong
+    n = agents.queue_many(ids, payload)
+    log.info("Queued scout '%s' for %d device(s): %s", cmd, n, ", ".join(ids))
+    return JSONResponse({"ok": True, "queued": n})
+
+
 @app.post("/watchtower/devices/delete")
 async def watchtower_devices_delete(request: Request) -> JSONResponse:
     _, body = await _read(request)
@@ -834,7 +863,20 @@ async def _startup() -> None:
             except Exception as exc:
                 log.error("Log prune failed: %s", exc)
 
+    async def _pinger() -> None:
+        # Periodically ping online agents so their presence + reported version stay fresh.
+        # Silent (no "ack") so it doesn't flood the log stream; the poll it wakes re-reports version.
+        while True:
+            await asyncio.sleep(20)
+            try:
+                for d in db.list_devices():
+                    if not d["revoked"] and agents.online(d["id"]):
+                        agents.queue(d["id"], {"cmd": "ping"})
+            except Exception as exc:
+                log.error("Agent pinger failed: %s", exc)
+
     asyncio.create_task(_pruner())
+    asyncio.create_task(_pinger())
     log.info("Watchtower up. configured=%s auto-print<=%s fuse=%d/min retention=%dd",
              db.is_configured(), db.get_config("auto_print_min_sev", _DEF_MIN_SEV),
              auto_print_fuse(), retention_days())

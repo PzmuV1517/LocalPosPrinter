@@ -67,6 +67,15 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
     const d = await guard(api.updateAllScouts())
     if (d) alert(`Update queued for ${d.queued} device(s). Applies as each agent polls.`)
   }
+  async function ping(id: string) {
+    const d = await guard(api.pingScout(id))
+    if (d) alert(`Ping sent to ${id}. Watch Logs for a "pong" from scout.agent (needs the agent running).`)
+  }
+  async function restartAgent(id: string) {
+    if (!confirm(`Restart the scout agent on ${id}? (Re-execs it — picks up a new local scout.py.)`)) return
+    const d = await guard(api.restartScout(id))
+    if (d) alert(`Restart queued for ${id}. Applies on its next poll.`)
+  }
 
   return (
     <>
@@ -78,7 +87,10 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
         <div className="cards" style={{ marginTop: 12 }}>
           {devices.length
             ? devices.map((d) => <DeviceCard key={d.id} d={d} counts={counts}
-              actions={{ onRotate: () => rotate(d.id), onRevoke: () => revoke(d.id), onDelete: () => del(d.id), onUpdate: () => update(d.id) }} />)
+              actions={{
+                onRotate: () => rotate(d.id), onRevoke: () => revoke(d.id), onDelete: () => del(d.id),
+                onUpdate: () => update(d.id), onPing: () => ping(d.id), onRestart: () => restartAgent(d.id),
+              }} />)
             : <div className="muted" style={{ fontSize: 12 }}>No devices yet.</div>}
         </div>
         <div className="row" style={{ marginTop: 14, alignItems: 'flex-end' }}>

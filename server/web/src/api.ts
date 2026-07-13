@@ -77,6 +77,8 @@ export const revokeDevice = (device_id: string) => post('/watchtower/devices/rev
 export const deleteDevice = (device_id: string) => postRaw('/watchtower/devices/delete', { device_id })
 export const updateScout = (device_id: string) => post<{ queued: number }>('/watchtower/devices/update', { device_id })
 export const updateAllScouts = () => post<{ queued: number }>('/watchtower/devices/update', { all: true })
+export const pingScout = (device_id: string) => post<{ queued: number }>('/watchtower/devices/command', { device_id, cmd: 'ping' })
+export const restartScout = (device_id: string) => post<{ queued: number }>('/watchtower/devices/command', { device_id, cmd: 'restart' })
 
 // ---- passwords / history ----
 export const adminState = () => post<{ history: HistoryRow[]; passwords: TempPassword[] }>('/admin/state', {})

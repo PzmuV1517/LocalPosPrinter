@@ -180,6 +180,17 @@ devs = client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()["
 assert any(d["id"] == "kitchen-pi" and d.get("agent_online") for d in devs)
 print("  ok  agent poll heartbeat + queued update delivered + shows online")
 
+# ---- ping/restart commands via /watchtower/devices/command ----
+assert client.post("/watchtower/devices/command", json={"device_id": "kitchen-pi", "cmd": "bogus"}, headers=AUTH).status_code == 400
+assert client.post("/watchtower/devices/command", json={"device_id": "kitchen-pi", "cmd": "ping"}, headers=AUTH).json()["queued"] == 1
+pbody = json.dumps({"version": "2.1.2", "host": "h"}).encode()
+poll = client.post("/agent/poll", data=pbody, headers=sign("POST", "/agent/poll", pbody))
+assert poll.json()["cmd"] == {"cmd": "ping", "ack": True}
+# version reported on the poll shows up on the device
+devs = client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()["devices"]
+assert any(d["id"] == "kitchen-pi" and d["meta"].get("scout_version") == "2.1.2" for d in devs)
+print("  ok  ping command delivered + scout version reported on poll")
+
 # ---- delete is refused for an active device, allowed once revoked ----
 resp = client.post("/watchtower/devices/create", json={"device_id": "tmp-dev"}, headers=AUTH)
 assert resp.status_code == 200

@@ -42,7 +42,7 @@ import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
-SCOUT_VERSION = "2.1.1"
+SCOUT_VERSION = "2.1.2"
 
 
 def _describe_error(e: Exception) -> str:
@@ -166,11 +166,22 @@ def run_agent(scout: "Scout") -> int:
                 print(f"reconnected after {down}s ({last_error})")
                 connected = True
             backoff = 1.0
-            if isinstance(cmd, dict) and cmd.get("cmd") == "update":
-                print("update command received")
-                scout.log("info", "scout agent applying update from server", service="scout.agent",
-                          meta={"event": "update"})
-                _self_update(scout)  # re-execs on success
+            if isinstance(cmd, dict):
+                c = cmd.get("cmd")
+                if c == "update":
+                    print("update command received")
+                    scout.log("info", "scout agent applying update from server", service="scout.agent",
+                              meta={"event": "update"})
+                    _self_update(scout)  # re-execs on success
+                elif c == "restart":
+                    print("restart command received")
+                    scout.log("info", "scout agent restart requested from server", service="scout.agent",
+                              meta={"event": "restart"})
+                    os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), "agent"])
+                elif c == "ping" and cmd.get("ack"):
+                    # Manual ping — reply visibly. (Periodic pings omit "ack" and just refresh
+                    # presence/version via this poll, so they don't flood the log stream.)
+                    scout.log("info", "ping ack (pong)", service="scout.agent", meta={"event": "pong"})
         except KeyboardInterrupt:
             return 0
         except Exception as e:  # server down / restart / network blip — re-poll shortly

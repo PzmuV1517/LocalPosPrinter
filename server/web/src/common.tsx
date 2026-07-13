@@ -65,7 +65,10 @@ export function SevPills({ sevs }: { sevs: Partial<Record<Severity, number>> }) 
 export function DeviceCard(
   { d, counts, actions }: {
     d: Device; counts: SevCounts;
-    actions?: { onRotate: () => void; onRevoke: () => void; onDelete: () => void; onUpdate: () => void }
+    actions?: {
+      onRotate: () => void; onRevoke: () => void; onDelete: () => void;
+      onUpdate: () => void; onPing: () => void; onRestart: () => void
+    }
   },
 ) {
   // A live agent (long-poll heartbeat) is the strongest signal; else fall back to last-seen.
@@ -82,8 +85,12 @@ export function DeviceCard(
       </div>
       <div className="sevs"><SevPills sevs={counts[d.id] || {}} /></div>
       {actions && (
-        <div className="actions">
-          {!d.revoked && <button className="ghost mini" onClick={actions.onUpdate}>Update</button>}
+        <div className="actions" style={{ flexWrap: 'wrap' }}>
+          {!d.revoked && <>
+            <button className="ghost mini" onClick={actions.onPing}>Ping</button>
+            <button className="ghost mini" onClick={actions.onRestart}>Restart</button>
+            <button className="ghost mini" onClick={actions.onUpdate}>Update</button>
+          </>}
           <button className="ghost mini" onClick={actions.onRotate}>{d.revoked ? 'Reactivate' : 'Rotate'}</button>
           {d.revoked
             ? <button className="ghost mini" onClick={actions.onDelete}>Delete</button>
