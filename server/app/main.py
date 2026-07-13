@@ -240,19 +240,56 @@ fi
 
 echo ""
 echo "Scout installed: $BIN/scout   (config: $CONF)"
-echo ""
-echo "Finish setup — paste the secret shown in the Watchtower dashboard:"
-[ -z "$DEVICE_ID" ] && echo "  $BIN/scout set-device <DEVICE_ID>"
-echo "  $BIN/scout set-secret <SECRET>"
-echo ""
-echo "Test:  $BIN/scout -s info --service test \"hello watchtower\""
-echo ""
-echo "For live presence in the dashboard + remote updates, run the agent as a service"
-echo "(after set-secret):"
-echo "  $BIN/scout install-service"
+
+# --- guided setup: prompt on the real terminal even when run via `curl | bash` ---
+set +e
+TTY=/dev/tty
+have_tty=0; [ -r "$TTY" ] && [ -w "$TTY" ] && have_tty=1
+conf_set() { tmp=$(mktemp); grep -v "^$1=" "$CONF" 2>/dev/null > "$tmp"; echo "$1=$2" >> "$tmp"; mv "$tmp" "$CONF"; chmod 600 "$CONF"; }
+conf_get() { grep "^$1=" "$CONF" 2>/dev/null | head -1 | cut -d= -f2-; }
+ask_yn() { p="$1"; d="$2"; a=""; printf "%s " "$p" > "$TTY"; read a < "$TTY" 2>/dev/null; a="${a:-$d}"; case "$a" in [Yy]*) return 0;; *) return 1;; esac; }
+
+if [ "$have_tty" = "1" ]; then
+  echo ""
+  if [ -z "$(conf_get SCOUT_DEVICE_ID)" ]; then
+    printf "Device id (from the dashboard): " > "$TTY"; read did < "$TTY" 2>/dev/null
+    [ -n "$did" ] && conf_set SCOUT_DEVICE_ID "$did"
+  fi
+  printf "Paste the device secret from the dashboard (blank = keep current): " > "$TTY"
+  stty -echo < "$TTY" 2>/dev/null; read secret < "$TTY" 2>/dev/null; stty echo < "$TTY" 2>/dev/null; printf "\n" > "$TTY"
+  [ -n "$secret" ] && { conf_set SCOUT_SECRET "$secret"; echo "Secret saved."; }
+
+  if [ -n "$(conf_get SCOUT_SECRET)" ]; then
+    if ask_yn "Send a test log now? [Y/n]" Y; then
+      "$BIN/scout" -s info --service setup "scout installed on $(hostname)" >/dev/null 2>&1 \
+        && echo "Test log sent — check the dashboard's Logs tab." || echo "Could not reach the server for the test."
+    fi
+    if ask_yn "Run scout as an always-on background service so it stays online? [Y/n]" Y; then
+      "$BIN/scout" install-service
+      if ask_yn "Keep it running after you log out (enable linger)? [Y/n]" Y; then
+        loginctl enable-linger "$USER" 2>/dev/null && echo "Linger enabled." \
+          || echo "Couldn't enable linger automatically — run: sudo loginctl enable-linger \"$USER\""
+      fi
+    fi
+    echo ""
+    echo "Done — your device should show 'agent online' in the dashboard shortly."
+  else
+    echo ""
+    echo "No secret set. When you have it:  $BIN/scout set-secret <SECRET>  then  $BIN/scout install-service"
+  fi
+else
+  # No terminal (piped non-interactively) — print the manual steps.
+  echo ""
+  echo "Finish setup:"
+  [ -z "$DEVICE_ID" ] && echo "  $BIN/scout set-device <DEVICE_ID>"
+  echo "  $BIN/scout set-secret <SECRET>"
+  echo "  $BIN/scout install-service        # run as a background service"
+  echo "  loginctl enable-linger \"$USER\"   # keep it running after logout"
+fi
+
 if [ "$ONPATH" = "0" ]; then
   echo ""
-  echo "('scout' will be on PATH in new shells. For THIS shell: export PATH=\"$BIN:\$PATH\")"
+  echo "('scout' is on PATH in new shells. For THIS shell: export PATH=\"$BIN:\$PATH\")"
 fi
 """
 
