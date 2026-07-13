@@ -47,19 +47,39 @@ class Auth:
         self.skew = skew_secs
         self.session_ttl = session_ttl_secs
 
-    # ---- master password (scrypt-hashed in config; never stored in the clear) ----
+    # ---- master credentials (username + scrypt-hashed password; never stored in the clear) ----
     def is_master(self, password: Optional[str]) -> bool:
+        """Password-only check — authorises API printing (temp-password parent)."""
         if not password:
             return False
         stored = self.db.get_config("master_pw_hash")
         return bool(stored) and crypto.verify_password(password, stored)
 
-    def set_master(self, password: str) -> None:
+    def check_login(self, username: Optional[str], password: Optional[str]) -> bool:
+        """Full dashboard login: username AND password must both match."""
+        if not username or not password:
+            return False
+        stored_user = self.db.get_config("master_username")
+        stored_hash = self.db.get_config("master_pw_hash")
+        if not stored_user or not stored_hash:
+            return False
+        user_ok = hmac.compare_digest(username, stored_user)
+        pw_ok = crypto.verify_password(password, stored_hash)
+        return user_ok and pw_ok
+
+    def set_credentials(self, username: str, password: str) -> None:
+        self.db.set_config("master_username", username)
+        self.db.set_config("master_pw_hash", crypto.hash_password(password))
+
+    def set_username(self, username: str) -> None:
+        self.db.set_config("master_username", username)
+
+    def set_password(self, password: str) -> None:
         self.db.set_config("master_pw_hash", crypto.hash_password(password))
 
     # ---- session tokens (browser) ----
-    def login(self, password: Optional[str]) -> Optional[str]:
-        if not self.is_master(password):
+    def login(self, username: Optional[str], password: Optional[str]) -> Optional[str]:
+        if not self.check_login(username, password):
             return None
         return self._mint_session("admin")
 

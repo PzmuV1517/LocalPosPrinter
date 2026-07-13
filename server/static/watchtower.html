@@ -13,10 +13,18 @@
     @font-face { font-family:'Jacquard12'; src:url('/fonts/Jacquard12-Regular.ttf'); }
     @font-face { font-family:'Doto';       src:url('/fonts/Doto-Regular.ttf'); }
 
+<<<<<<< HEAD
     /* Three colors only: black (shades), white/gray (text), one accent. No gradients. */
     :root {
       --bg:#000; --surface:#0e0e0e; --surface2:#161616; --border:#262626;
       --text:#ededed; --muted:#6e6e6e; --accent:#e5484d;
+=======
+    /* Monochrome UI (black shades + white/gray). Red (--hot) is reserved as a single highlight
+       on the login page only. No gradients. */
+    :root {
+      --bg:#000; --surface:#0e0e0e; --surface2:#161616; --border:#262626;
+      --text:#ededed; --muted:#6e6e6e; --accent:#ededed; --hot:#e5484d;
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
     }
     * { box-sizing:border-box; }
     html,body { background:var(--bg); }
@@ -35,7 +43,11 @@
     textarea { min-height:120px; resize:vertical; }
     label { display:block; font-size:11px; color:var(--muted); margin:12px 0 5px; text-transform:uppercase; letter-spacing:.6px; }
     button {
+<<<<<<< HEAD
       background:var(--accent); color:#fff; border:1px solid var(--accent); border-radius:6px;
+=======
+      background:var(--accent); color:#000; border:1px solid var(--accent); border-radius:6px;
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
       padding:9px 14px; font-size:13px; font-family:inherit; cursor:pointer;
     }
     button.ghost { background:transparent; color:var(--text); border-color:var(--border); }
@@ -53,10 +65,16 @@
     .gate-verse { max-width:400px; }
     .gate-verse p { margin:0 0 14px; color:var(--muted); font-size:15px; line-height:1.6;
                     letter-spacing:.3px; font-style:italic; }
+<<<<<<< HEAD
     .gate-verse p.creator { color:var(--accent); font-style:normal; }
     @media (max-width:760px){ .gate-verse { text-align:center; } }
     .brand { font-size:26px; letter-spacing:6px; font-weight:700; margin:0 0 2px; }
     .brand .dotmark { color:var(--accent); }
+=======
+    .gate-verse p.creator { color:var(--hot); font-style:normal; }
+    @media (max-width:760px){ .gate-verse { text-align:center; } }
+    .brand { font-size:26px; letter-spacing:6px; font-weight:700; margin:0 0 2px; }
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
     .tag { color:var(--muted); font-size:12px; letter-spacing:1px; margin:0 0 22px; text-transform:uppercase; }
     .panel { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px; }
     .err { color:var(--accent); font-size:13px; min-height:18px; margin-top:10px; }
@@ -114,11 +132,21 @@
 
 <!-- ================= FIRST-RUN SETUP ================= -->
 <div id="setup" class="center hidden">
+<<<<<<< HEAD
   <div class="brand">WATCH<span class="dotmark">·</span>TOWER</div>
   <div class="tag">first-run setup</div>
   <div class="panel">
     <p class="stepnote">No configuration found. Set this up once — it's saved to the server's database and survives pulls &amp; updates.</p>
     <label>Master password</label>
+=======
+  <div class="brand">WATCHTOWER</div>
+  <div class="tag">first-run setup</div>
+  <div class="panel">
+    <p class="stepnote">No configuration found. Set this up once — it's saved to the server's database and survives pulls &amp; updates.</p>
+    <label>Username</label>
+    <input id="suUser" type="text" placeholder="choose a username" autocomplete="username" />
+    <label>Password</label>
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
     <input id="suPw" type="password" placeholder="choose a strong password" autocomplete="new-password" />
     <label>Confirm password</label>
     <input id="suPw2" type="password" autocomplete="new-password" />
@@ -146,10 +174,18 @@
 <div id="gate" class="gate-wrap hidden">
   <div class="gate-cols">
     <div class="gate-login">
+<<<<<<< HEAD
       <div class="brand">WATCH<span class="dotmark">·</span>TOWER</div>
       <div class="tag">fleet error &amp; log dashboard</div>
       <div class="panel">
         <label>Master password</label>
+=======
+      <div class="brand">WATCHTOWER</div>
+      <div class="panel">
+        <label>Username</label>
+        <input id="gateUser" type="text" autocomplete="username" />
+        <label>Password</label>
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
         <input id="gatePw" type="password" autocomplete="current-password" />
         <div style="margin-top:14px"><button id="gateBtn" style="width:100%">Sign in</button></div>
         <div id="gateErr" class="err"></div>
@@ -167,7 +203,11 @@
 <!-- ================= APP ================= -->
 <div id="app" class="hidden">
   <header>
+<<<<<<< HEAD
     <div class="brand">WATCH<span class="dotmark">·</span>TOWER</div>
+=======
+    <div class="brand">WATCHTOWER</div>
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
     <div class="right">
       <span><span id="connDot" class="dot"></span><span id="connTxt">printer …</span></span>
       <button class="ghost mini" id="logoutBtn">Sign out</button>
@@ -346,10 +386,18 @@
         <div id="cfgMsg" class="result"></div>
       </div>
       <div class="card">
+<<<<<<< HEAD
         <h2>Change master password</h2>
         <div class="row" style="align-items:flex-end">
           <div><label>New master password</label><input id="cfgPw" type="password" placeholder="min 4 chars" /></div>
           <button id="cfgPwSave" style="flex:0 0 auto">Update password</button>
+=======
+        <h2>Change credentials</h2>
+        <div class="row" style="align-items:flex-end">
+          <div><label>Username</label><input id="cfgUser" type="text" autocomplete="username" /></div>
+          <div><label>New password (blank = keep)</label><input id="cfgPw" type="password" placeholder="min 4 chars" autocomplete="new-password" /></div>
+          <button id="cfgPwSave" style="flex:0 0 auto">Update</button>
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
         </div>
         <div id="cfgPwMsg" class="result"></div>
       </div>
@@ -395,11 +443,20 @@ async function boot(){
 // ---- setup ----
 async function doSetup(){
   const e=$('suErr'); e.textContent='';
+<<<<<<< HEAD
   const pw=$('suPw').value, pw2=$('suPw2').value;
   if (pw.length < 4){ e.textContent='Password must be at least 4 characters'; return; }
   if (pw !== pw2){ e.textContent='Passwords do not match'; return; }
   const res = await fetch('/setup', {method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({master_password:pw, print_width:+$('suWidth').value,
+=======
+  const user=$('suUser').value.trim(), pw=$('suPw').value, pw2=$('suPw2').value;
+  if (!user){ e.textContent='Username is required'; return; }
+  if (pw.length < 4){ e.textContent='Password must be at least 4 characters'; return; }
+  if (pw !== pw2){ e.textContent='Passwords do not match'; return; }
+  const res = await fetch('/setup', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({username:user, master_password:pw, print_width:+$('suWidth').value,
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
       auto_print_min_sev:$('suSev').value, auto_print_max_per_min:+$('suFuse').value,
       log_retention_days:+$('suRet').value})});
   const data = await res.json();
@@ -411,9 +468,15 @@ async function doSetup(){
 async function login(){
   const e=$('gateErr'); e.textContent='';
   const res = await fetch('/session/login', {method:'POST', headers:{'Content-Type':'application/json'},
+<<<<<<< HEAD
     body: JSON.stringify({password:$('gatePw').value})});
   const data = await res.json();
   if (!res.ok || !data.token){ e.textContent = data.error || 'Invalid password'; return; }
+=======
+    body: JSON.stringify({username:$('gateUser').value.trim(), password:$('gatePw').value})});
+  const data = await res.json();
+  if (!res.ok || !data.token){ e.textContent = data.error || 'Invalid username or password'; return; }
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
   setToken(data.token); $('gatePw').value=''; showApp();
 }
 
@@ -532,6 +595,10 @@ async function loadConfig(){
   const d=await(await api('/config/get',{})).json();
   $('cfgWidth').value=d.print_width; $('cfgSev').value=d.auto_print_min_sev;
   $('cfgFuse').value=d.auto_print_max_per_min; $('cfgRet').value=d.log_retention_days;
+<<<<<<< HEAD
+=======
+  $('cfgUser').value=d.username||'';
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
 }
 async function saveConfig(){
   const res=await api('/config/set',{print_width:+$('cfgWidth').value, auto_print_min_sev:$('cfgSev').value,
@@ -539,10 +606,19 @@ async function saveConfig(){
   const m=$('cfgMsg'); if(res.ok){ m.className='result ok'; m.textContent='Saved.'; } else { m.className='result bad'; m.textContent='Failed.'; }
 }
 async function savePassword(){
+<<<<<<< HEAD
   const pw=$('cfgPw').value, m=$('cfgPwMsg');
   if(pw.length<4){ m.className='result bad'; m.textContent='Min 4 characters.'; return; }
   const res=await api('/config/set',{new_master_password:pw});
   if(res.ok){ m.className='result ok'; m.textContent='Master password updated.'; $('cfgPw').value=''; }
+=======
+  const user=$('cfgUser').value.trim(), pw=$('cfgPw').value, m=$('cfgPwMsg');
+  if(!user){ m.className='result bad'; m.textContent='Username required.'; return; }
+  if(pw && pw.length<4){ m.className='result bad'; m.textContent='Password min 4 characters.'; return; }
+  const body={new_master_username:user}; if(pw) body.new_master_password=pw;
+  const res=await api('/config/set', body);
+  if(res.ok){ m.className='result ok'; m.textContent='Credentials updated.'; $('cfgPw').value=''; }
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
   else { m.className='result bad'; m.textContent=(await res.json()).error||'Failed.'; }
 }
 
@@ -593,7 +669,11 @@ const FONT_FAMILY={'1':'monospace','2':'Jersey10','3':'Jacquard12','4':'Doto'};
 $('suBtn').onclick=doSetup;
 $('suPw2').addEventListener('keydown',e=>{ if(e.key==='Enter')doSetup(); });
 $('gateBtn').onclick=login;
+<<<<<<< HEAD
 $('gatePw').addEventListener('keydown',e=>{ if(e.key==='Enter')login(); });
+=======
+['gateUser','gatePw'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter')login(); }));
+>>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
 $('logoutBtn').onclick=showGate;
 document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 $('refreshLogs').onclick=refreshLogs;

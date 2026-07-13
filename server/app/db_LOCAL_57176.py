@@ -137,13 +137,7 @@ class Database:
             self._conn.commit()
 
     def is_configured(self) -> bool:
-<<<<<<< HEAD
         return bool(self.get_config("master_pw_hash"))
-=======
-        # Requires BOTH a username and a password hash, so a lone bootstrap password (or an old
-        # password-only config) still triggers the browser setup wizard.
-        return bool(self.get_config("master_username")) and bool(self.get_config("master_pw_hash"))
->>>>>>> 7cfcdd1 (Watchtower v2.0.0 — secure fleet error/log platform; HMAC auth; single-page dashboard)
 
     def _migrate_json(self) -> None:
         """One-time import of the old JSON files, if the DB is empty and they exist."""
