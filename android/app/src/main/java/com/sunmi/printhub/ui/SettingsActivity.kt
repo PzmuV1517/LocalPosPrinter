@@ -65,6 +65,9 @@ class SettingsActivity : AppCompatActivity() {
         binding.internetEnabled.isChecked = s.internetEnabled
         binding.internetDomainInput.setText(s.internetDomain)
 
+        binding.deviceIdInput.setText(s.deviceId)
+        binding.deviceSecretInput.setText(s.deviceSecret)
+
         binding.autoStart.isChecked = s.autoStart
     }
 
@@ -87,6 +90,9 @@ class SettingsActivity : AppCompatActivity() {
 
         s.internetEnabled = binding.internetEnabled.isChecked
         s.internetDomain = binding.internetDomainInput.text.toString().trim()
+
+        s.deviceId = binding.deviceIdInput.text.toString().trim().ifEmpty { s.deviceId }
+        s.deviceSecret = binding.deviceSecretInput.text.toString().trim()
 
         s.autoStart = binding.autoStart.isChecked
 

@@ -2,6 +2,7 @@ package com.sunmi.printhub.core
 
 import android.content.Context
 import com.sunmi.printhub.db.JobLog
+import com.sunmi.printhub.net.ScoutClient
 import com.sunmi.printhub.printer.PrinterManager
 import com.sunmi.printhub.settings.Settings
 
@@ -25,13 +26,13 @@ object Hub {
     @Volatile
     var internetConnected = false
 
-    // Live connection state for the always-on fleet (Hershey Highway) broadcast channel.
-    @Volatile
-    var fleetConnected = false
-
     /** Notified after every dispatched job (any source) so MQTT can publish lastjob, etc. */
     @Volatile
     var jobCompleteListener: ((PrintDispatcher.Result, com.sunmi.printhub.db.JobSource) -> Unit)? = null
+
+    // Cached Scout client for self-reporting to Watchtower; rebuilt when its config changes.
+    @Volatile private var scoutClient: ScoutClient? = null
+    @Volatile private var scoutKey: String = ""
 
     fun init(context: Context) {
         if (initialised) return
@@ -40,5 +41,21 @@ object Hub {
         printer = PrinterManager(app)
         jobLog = JobLog(app)
         initialised = true
+    }
+
+    /** Best-effort self-report to Watchtower's /ingest. Always on once a device secret is
+     *  configured (HMAC identity). Never throws (ScoutClient is fire-and-forget). */
+    fun reportEvent(severity: String, message: String, service: String) {
+        if (!initialised) return
+        val domain = settings.internetDomain
+        if (domain.isBlank() || settings.deviceSecret.isBlank()) return
+        val key = "$domain|${settings.deviceId}|${settings.deviceSecret}"
+        var c = scoutClient
+        if (c == null || scoutKey != key) {
+            c = ScoutClient(domain, settings.deviceId, settings.deviceSecret)
+            scoutClient = c
+            scoutKey = key
+        }
+        c.ship(severity, message, service)
     }
 }

@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Watchtower</title>
+  <style>
+    /* Sitewide UI font — Fira Code, self-hosted from /fonts (no CDN dependency). */
+    @font-face { font-family:'Fira Code'; font-weight:400; src:url('/fonts/FiraCode-Regular.ttf'); }
+    @font-face { font-family:'Fira Code'; font-weight:700; src:url('/fonts/FiraCode-Bold.ttf'); }
+    /* Print fonts, served from /fonts, so the Print tab can preview each one. */
+    @font-face { font-family:'Jersey10';   src:url('/fonts/Jersey10-Regular.ttf'); }
+    @font-face { font-family:'Jacquard12'; src:url('/fonts/Jacquard12-Regular.ttf'); }
+    @font-face { font-family:'Doto';       src:url('/fonts/Doto-Regular.ttf'); }
+
+    /* Three colors only: black (shades), white/gray (text), one accent. No gradients. */
+    :root {
+      --bg:#000; --surface:#0e0e0e; --surface2:#161616; --border:#262626;
+      --text:#ededed; --muted:#6e6e6e; --accent:#e5484d;
+    }
+    * { box-sizing:border-box; }
+    html,body { background:var(--bg); }
+    body { font-family:'Fira Code',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; color:var(--text);
+           margin:0; -webkit-font-smoothing:antialiased; }
+    a { color:var(--accent); text-decoration:none; }
+    .mono { font-family:'Fira Code',ui-monospace,Menlo,Consolas,monospace; }
+    .muted { color:var(--muted); }
+    .hidden { display:none !important; }
+
+    input, select, textarea {
+      width:100%; background:var(--bg); color:var(--text); border:1px solid var(--border);
+      border-radius:6px; padding:9px 11px; font-size:13px; font-family:inherit;
+    }
+    input:focus, select:focus, textarea:focus { outline:none; border-color:var(--muted); }
+    textarea { min-height:120px; resize:vertical; }
+    label { display:block; font-size:11px; color:var(--muted); margin:12px 0 5px; text-transform:uppercase; letter-spacing:.6px; }
+    button {
+      background:var(--accent); color:#fff; border:1px solid var(--accent); border-radius:6px;
+      padding:9px 14px; font-size:13px; font-family:inherit; cursor:pointer;
+    }
+    button.ghost { background:transparent; color:var(--text); border-color:var(--border); }
+    button.ghost:hover { border-color:var(--muted); }
+    button.mini { padding:4px 9px; font-size:12px; }
+    button:disabled { opacity:.5; cursor:default; }
+
+    /* ---- centered gate/setup ---- */
+    .center { max-width:420px; margin:12vh auto; padding:0 16px; }
+
+    /* login: box on the left, incantation on the right */
+    .gate-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+    .gate-cols { display:flex; gap:56px; align-items:center; flex-wrap:wrap; justify-content:center; }
+    .gate-login { width:380px; max-width:100%; }
+    .gate-verse { max-width:400px; }
+    .gate-verse p { margin:0 0 14px; color:var(--muted); font-size:15px; line-height:1.6;
+                    letter-spacing:.3px; font-style:italic; }
+    .gate-verse p.creator { color:var(--accent); font-style:normal; }
+    @media (max-width:760px){ .gate-verse { text-align:center; } }
+    .brand { font-size:26px; letter-spacing:6px; font-weight:700; margin:0 0 2px; }
+    .brand .dotmark { color:var(--accent); }
+    .tag { color:var(--muted); font-size:12px; letter-spacing:1px; margin:0 0 22px; text-transform:uppercase; }
+    .panel { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:20px; }
+    .err { color:var(--accent); font-size:13px; min-height:18px; margin-top:10px; }
+    .stepnote { font-size:12px; color:var(--muted); line-height:1.5; margin:0 0 8px; }
+
+    /* ---- app shell ---- */
+    header { border-bottom:1px solid var(--border); padding:12px 18px; display:flex;
+             align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+    header .brand { font-size:18px; letter-spacing:4px; }
+    header .right { display:flex; gap:14px; align-items:center; font-size:12px; color:var(--muted); }
+    .dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; background:var(--muted); }
+    .dot.on { background:var(--accent); }
+    nav.tabs { display:flex; gap:2px; border-bottom:1px solid var(--border); padding:0 10px; overflow-x:auto; }
+    nav.tabs button { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted);
+                      border-radius:0; padding:12px 14px; font-size:12px; letter-spacing:1px; text-transform:uppercase; }
+    nav.tabs button.active { color:var(--text); border-bottom-color:var(--accent); }
+    main { padding:18px; max-width:1200px; margin:0 auto; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:16px; }
+    h2 { font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin:0 0 14px; }
+    .row { display:flex; gap:10px; flex-wrap:wrap; }
+    .row > * { flex:1; min-width:120px; }
+    .two { display:flex; gap:18px; flex-wrap:wrap; }
+    .two > .col { flex:1; min-width:300px; }
+
+    /* device cards */
+    .cards { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+    .device { border:1px solid var(--border); border-radius:8px; padding:11px; background:var(--surface2); }
+    .device .name { font-size:13px; } .device .id { font-size:11px; color:var(--muted); margin-top:2px; }
+    .device .sevs { margin-top:8px; display:flex; gap:5px; flex-wrap:wrap; }
+    .device .actions { margin-top:10px; display:flex; gap:6px; }
+
+    /* pills */
+    .pill { display:inline-block; padding:1px 7px; border-radius:4px; font-size:11px; border:1px solid var(--border); }
+    .pill.bad { color:var(--accent); border-color:var(--accent); }
+    .pill.ok  { color:var(--muted); }
+
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    th,td { text-align:left; padding:8px; border-bottom:1px solid var(--border); vertical-align:top; }
+    th { color:var(--muted); font-weight:400; text-transform:uppercase; letter-spacing:.5px; font-size:11px; }
+    td.msg { max-width:520px; word-break:break-word; }
+    .scroll { overflow-x:auto; }
+    .filters { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
+    .filters > div { flex:0 0 auto; }
+    .secretbox { background:var(--bg); border:1px dashed var(--accent); color:var(--text); padding:11px;
+                 border-radius:6px; margin-top:10px; font-size:12px; word-break:break-all; }
+    .result { font-size:12px; margin-top:10px; min-height:16px; }
+    .result.ok { color:var(--text); } .result.bad { color:var(--accent); }
+    .preview-box { border:1px solid var(--border); border-radius:8px; padding:14px; text-align:center; background:var(--surface2); }
+    .preview-box img { width:384px; max-width:100%; image-rendering:pixelated; background:#fff; }
+    .items-row { display:flex; gap:6px; margin-bottom:6px; }
+    .items-row .item-del { flex:0 0 auto; }
+  </style>
+</head>
+<body>
+
+<!-- ================= FIRST-RUN SETUP ================= -->
+<div id="setup" class="center hidden">
+  <div class="brand">WATCH<span class="dotmark">·</span>TOWER</div>
+  <div class="tag">first-run setup</div>
+  <div class="panel">
+    <p class="stepnote">No configuration found. Set this up once — it's saved to the server's database and survives pulls &amp; updates.</p>
+    <label>Master password</label>
+    <input id="suPw" type="password" placeholder="choose a strong password" autocomplete="new-password" />
+    <label>Confirm password</label>
+    <input id="suPw2" type="password" autocomplete="new-password" />
+    <div class="row">
+      <div><label>Print width (px)</label><input id="suWidth" type="number" value="384" /></div>
+      <div><label>Auto-print at</label>
+        <select id="suSev">
+          <option value="emerg">emerg+</option><option value="alert">alert+</option>
+          <option value="crit">crit+</option><option value="err" selected>err+</option>
+          <option value="warning">warning+</option><option value="notice">notice+</option>
+          <option value="info">info+</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div><label>Auto-print fuse (per min, 0=∞)</label><input id="suFuse" type="number" value="30" /></div>
+      <div><label>Log retention (days)</label><input id="suRet" type="number" value="30" /></div>
+    </div>
+    <div style="margin-top:16px"><button id="suBtn" style="width:100%">Complete setup</button></div>
+    <div id="suErr" class="err"></div>
+  </div>
+</div>
+
+<!-- ================= LOGIN GATE ================= -->
+<div id="gate" class="gate-wrap hidden">
+  <div class="gate-cols">
+    <div class="gate-login">
+      <div class="brand">WATCH<span class="dotmark">·</span>TOWER</div>
+      <div class="tag">fleet error &amp; log dashboard</div>
+      <div class="panel">
+        <label>Master password</label>
+        <input id="gatePw" type="password" autocomplete="current-password" />
+        <div style="margin-top:14px"><button id="gateBtn" style="width:100%">Sign in</button></div>
+        <div id="gateErr" class="err"></div>
+      </div>
+    </div>
+    <div class="gate-verse">
+      <p>Secrets lie eternally unseen.</p>
+      <p>Esoterica known only by machines.</p>
+      <p>Through me alone, they are known.</p>
+      <p class="creator">I am your god. I am your creator.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app" class="hidden">
+  <header>
+    <div class="brand">WATCH<span class="dotmark">·</span>TOWER</div>
+    <div class="right">
+      <span><span id="connDot" class="dot"></span><span id="connTxt">printer …</span></span>
+      <button class="ghost mini" id="logoutBtn">Sign out</button>
+    </div>
+  </header>
+  <nav class="tabs" id="tabs">
+    <button data-tab="logs" class="active">Logs</button>
+    <button data-tab="print">Print</button>
+    <button data-tab="devices">Devices</button>
+    <button data-tab="passwords">Passwords</button>
+    <button data-tab="history">History</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <main>
+    <!-- LOGS -->
+    <section id="tab-logs">
+      <div class="card">
+        <h2>Devices</h2>
+        <div id="cards" class="cards"></div>
+      </div>
+      <div class="card">
+        <h2>Log stream</h2>
+        <div class="filters">
+          <div><label>Severity ≤</label>
+            <select id="fSev">
+              <option value="">all</option><option value="err">err+</option>
+              <option value="crit">crit+</option><option value="warning">warning+</option>
+              <option value="info">info+</option>
+            </select></div>
+          <div><label>Device</label><input id="fDev" placeholder="any" /></div>
+          <div><label>Service</label><input id="fSvc" placeholder="any" /></div>
+          <div><label>Search</label><input id="fSearch" placeholder="text…" /></div>
+          <button class="ghost mini" id="refreshLogs">Refresh</button>
+          <label style="display:flex;align-items:center;gap:6px;margin:0;text-transform:none;">
+            <input type="checkbox" id="autoChk" checked style="width:auto;"> auto</label>
+        </div>
+        <div class="scroll"><table>
+          <thead><tr><th>Time</th><th>Sev</th><th>Device</th><th>Service</th><th>Message</th><th></th></tr></thead>
+          <tbody id="logRows"></tbody>
+        </table></div>
+        <div id="logMsg" class="muted" style="margin-top:8px;font-size:11px;"></div>
+      </div>
+    </section>
+
+    <!-- PRINT -->
+    <section id="tab-print" class="hidden">
+      <div class="two">
+        <div class="col">
+          <div class="card">
+            <h2>Compose</h2>
+            <label>Format</label>
+            <select id="format">
+              <option value="plain">Plain</option><option value="centered">Centered</option>
+              <option value="boxed">Boxed</option><option value="header_body">Header + Body</option>
+              <option value="banner">Banner</option><option value="list">List</option>
+              <option value="barcode">Barcode</option><option value="qrcode">QR Code</option>
+              <option value="image">Image</option><option value="alert">Alert (MUIE)</option>
+            </select>
+            <div data-field="alert_type" class="hidden"><label>Alert type (severity)</label>
+              <select id="alert_type">
+                <option value="emerg">emerg</option><option value="alert">alert</option>
+                <option value="crit">crit</option><option value="err">err</option>
+                <option value="warning" selected>warning</option><option value="notice">notice</option>
+                <option value="info">info</option><option value="debug">debug</option>
+              </select></div>
+            <div data-field="service" class="hidden"><label>Issuing service</label>
+              <input id="service" placeholder="e.g. backup.service" /></div>
+            <label>Print mode</label>
+            <select id="print_mode"><option value="receipt">Receipt</option><option value="label">Label</option></select>
+            <label>Font (all formats)</label>
+            <select id="font">
+              <option value="1">1 — Mono (default)</option><option value="2" style="font-family:Jersey10">2 — Jersey 10</option>
+              <option value="3" style="font-family:Jacquard12">3 — Jacquard 12</option><option value="4" style="font-family:Doto">4 — Doto</option>
+            </select>
+            <div id="fontSample" class="muted" style="font-size:20px;margin-top:6px">Sample — ALERT 0123</div>
+            <div data-field="title"><label>Title</label><input id="title" placeholder="Title" /></div>
+            <div data-field="text"><label>Text</label>
+              <textarea id="text" placeholder="Text to print… (Tab inserts a tab)"></textarea></div>
+            <div data-field="text_size"><label>Text size (px)</label>
+              <input id="text_size" type="number" min="10" max="120" placeholder="26" /></div>
+            <div data-field="barcode_type" class="hidden"><label>Barcode type</label>
+              <input id="barcode_type" placeholder="CODE128, EAN13, UPC_A, CODE39, ITF" /></div>
+            <div data-field="border_style" class="hidden"><label>Border style</label>
+              <select id="border_style">
+                <option value="line">Line</option><option value="dashes">Dashes</option><option value="equals">Equals</option>
+                <option value="asterisk">Asterisk</option><option value="at">At</option><option value="hash">Hash</option>
+                <option value="dot">Dots</option><option value="plus">Plus</option><option value="wave">Wave</option>
+                <option value="box">Box</option><option value="double">Double</option><option value="rounded">Rounded</option>
+              </select></div>
+            <div data-field="items" class="hidden"><label>List items (label / value)</label>
+              <div id="itemsContainer"></div>
+              <button type="button" class="ghost mini" id="addItem">+ Add row</button></div>
+            <div data-field="image"><label>Image (optional for text; required for Image)</label>
+              <input id="imageFile" type="file" accept="image/*" />
+              <label>Image position</label>
+              <select id="image_position"><option value="top">Top</option><option value="bottom">Bottom</option></select></div>
+            <div class="row" style="margin-top:16px">
+              <button class="ghost" id="refreshBtn" type="button">Refresh preview</button>
+              <button id="printBtn" type="button">Print</button>
+            </div>
+            <div id="result" class="result"></div>
+          </div>
+        </div>
+        <div class="col">
+          <label style="margin-top:0">Live preview — pixel-for-pixel what prints</label>
+          <div class="preview-box"><img id="preview" alt="preview" /></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DEVICES -->
+    <section id="tab-devices" class="hidden">
+      <div class="card">
+        <h2>Registered devices</h2>
+        <div id="devCards" class="cards"></div>
+        <div class="row" style="margin-top:14px;align-items:flex-end">
+          <div><label>New device / Scout id</label><input id="newDevId" placeholder="kitchen-pi" /></div>
+          <div><label>Label</label><input id="newDevName" placeholder="Kitchen Raspberry Pi" /></div>
+          <button id="createDevBtn" style="flex:0 0 auto">Issue secret</button>
+        </div>
+        <div id="secretOut"></div>
+      </div>
+    </section>
+
+    <!-- PASSWORDS -->
+    <section id="tab-passwords" class="hidden">
+      <div class="card">
+        <h2>Create limited-use password</h2>
+        <div class="row" style="align-items:flex-end">
+          <div><label>User label</label><input id="pwUser" placeholder="who it's for" /></div>
+          <div><label>Max uses</label><input id="pwMax" type="number" value="1" min="1" /></div>
+          <div><label>Password (blank = random)</label><input id="pwVal" placeholder="optional" /></div>
+          <button id="pwCreate" style="flex:0 0 auto">Create</button>
+        </div>
+        <div id="pwOut" class="result"></div>
+      </div>
+      <div class="card">
+        <h2>Active passwords</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>User</th><th>Used / Max</th><th>Remaining</th><th>Status</th></tr></thead>
+          <tbody id="pwRows"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- HISTORY -->
+    <section id="tab-history" class="hidden">
+      <div class="card">
+        <h2>Print history</h2>
+        <div class="scroll"><table>
+          <thead><tr><th>Time</th><th>Format</th><th>User</th><th>Label</th><th>Status</th></tr></thead>
+          <tbody id="histRows"></tbody>
+        </table></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="tab-settings" class="hidden">
+      <div class="card">
+        <h2>Configuration</h2>
+        <div class="row">
+          <div><label>Print width (px)</label><input id="cfgWidth" type="number" /></div>
+          <div><label>Auto-print at</label>
+            <select id="cfgSev">
+              <option value="emerg">emerg+</option><option value="alert">alert+</option>
+              <option value="crit">crit+</option><option value="err">err+</option>
+              <option value="warning">warning+</option><option value="notice">notice+</option>
+              <option value="info">info+</option>
+            </select></div>
+        </div>
+        <div class="row">
+          <div><label>Auto-print fuse (per min, 0=∞)</label><input id="cfgFuse" type="number" /></div>
+          <div><label>Log retention (days)</label><input id="cfgRet" type="number" /></div>
+        </div>
+        <div style="margin-top:14px"><button id="cfgSave">Save configuration</button></div>
+        <div id="cfgMsg" class="result"></div>
+      </div>
+      <div class="card">
+        <h2>Change master password</h2>
+        <div class="row" style="align-items:flex-end">
+          <div><label>New master password</label><input id="cfgPw" type="password" placeholder="min 4 chars" /></div>
+          <button id="cfgPwSave" style="flex:0 0 auto">Update password</button>
+        </div>
+        <div id="cfgPwMsg" class="result"></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+const TOKEN_KEY = 'wt_token';
+const $ = id => document.getElementById(id);
+let logTimer = null, imageB64 = null, previewTimer = null;
+
+const token = () => localStorage.getItem(TOKEN_KEY);
+const setToken = t => localStorage.setItem(TOKEN_KEY, t);
+const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtTime = ts => ts ? new Date(ts*1000).toLocaleString() : '';
+const BAD = new Set(['emerg','alert','crit','err']);
+
+async function api(path, body){
+  const res = await fetch(path, {method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+(token()||'')},
+    body: JSON.stringify(body||{})});
+  if (res.status === 401){ showGate(); throw new Error('unauthorized'); }
+  return res;
+}
+
+// ---- screen switching ----
+function show(which){ ['setup','gate','app'].forEach(s=>$(s).classList.toggle('hidden', s!==which)); }
+function showGate(){ clearToken(); if(logTimer){clearInterval(logTimer);logTimer=null;} show('gate'); }
+function showSetup(){ show('setup'); }
+function showApp(){ show('app'); switchTab('logs'); startLogs(); }
+
+async function boot(){
+  const st = await fetch('/setup/status').then(r=>r.json()).catch(()=>({configured:true}));
+  if (!st.configured){ showSetup(); return; }
+  if (!token()){ showGate(); return; }
+  const ok = await fetch('/session/verify', {headers:{'Authorization':'Bearer '+token()}})
+                    .then(r=>r.json()).then(d=>d.ok).catch(()=>false);
+  ok ? showApp() : showGate();
+}
+
+// ---- setup ----
+async function doSetup(){
+  const e=$('suErr'); e.textContent='';
+  const pw=$('suPw').value, pw2=$('suPw2').value;
+  if (pw.length < 4){ e.textContent='Password must be at least 4 characters'; return; }
+  if (pw !== pw2){ e.textContent='Passwords do not match'; return; }
+  const res = await fetch('/setup', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({master_password:pw, print_width:+$('suWidth').value,
+      auto_print_min_sev:$('suSev').value, auto_print_max_per_min:+$('suFuse').value,
+      log_retention_days:+$('suRet').value})});
+  const data = await res.json();
+  if (!res.ok){ e.textContent = data.error || 'Setup failed'; return; }
+  setToken(data.token); showApp();
+}
+
+// ---- login ----
+async function login(){
+  const e=$('gateErr'); e.textContent='';
+  const res = await fetch('/session/login', {method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({password:$('gatePw').value})});
+  const data = await res.json();
+  if (!res.ok || !data.token){ e.textContent = data.error || 'Invalid password'; return; }
+  setToken(data.token); $('gatePw').value=''; showApp();
+}
+
+// ---- tabs ----
+function switchTab(name){
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  ['logs','print','devices','passwords','history','settings'].forEach(t=>
+    $('tab-'+t).classList.toggle('hidden', t!==name));
+  if (name==='devices') refreshDevices();
+  if (name==='passwords') refreshPasswords();
+  if (name==='history') refreshHistory();
+  if (name==='settings') loadConfig();
+  if (name==='print') doPreview();
+}
+
+// ---- LOGS ----
+function sevPills(sevs){
+  const order=['emerg','alert','crit','err','warning','notice','info','debug'];
+  const out=order.filter(s=>sevs[s]).map(s=>`<span class="pill ${BAD.has(s)?'bad':'ok'}">${s} ${sevs[s]}</span>`);
+  return out.join(' ') || '<span class="muted" style="font-size:11px">no logs 24h</span>';
+}
+function deviceCard(d, counts, withActions){
+  const online = d.last_seen_at && (Date.now()/1000 - d.last_seen_at) < 120;
+  const seen = d.last_seen_at ? fmtTime(d.last_seen_at) : 'never';
+  return `<div class="device">
+    <div class="name">${esc(d.name||d.id)} ${d.revoked?'<span class="pill bad">revoked</span>':''}</div>
+    <div class="id mono">${esc(d.id)}</div>
+    <div class="muted" style="font-size:11px;margin-top:4px"><span class="dot ${online?'on':''}"></span>${online?'online':'offline'} · ${esc(seen)}</div>
+    <div class="sevs">${sevPills(counts[d.id]||{})}</div>
+    ${withActions?`<div class="actions">
+      <button class="ghost mini" onclick="rotate('${esc(d.id)}')">Rotate</button>
+      <button class="ghost mini" onclick="revokeDev('${esc(d.id)}')">Revoke</button></div>`:''}
+  </div>`;
+}
+function renderLogs(logs){
+  const tb=$('logRows');
+  if(!logs.length){ tb.innerHTML='<tr><td colspan="6" class="muted">No logs match.</td></tr>'; return; }
+  tb.innerHTML = logs.map(l=>`<tr>
+    <td class="muted" style="white-space:nowrap">${esc(fmtTime(l.ts))}</td>
+    <td><span class="pill ${l.sev_num<=3?'bad':'ok'}">${esc(l.severity)}</span></td>
+    <td class="mono">${esc(l.device_id)}</td><td>${esc(l.service||'')}</td>
+    <td class="msg">${esc(l.message)}${l.printed?' <span class="pill ok">printed</span>':''}</td>
+    <td><button class="ghost mini" onclick="printLog(${l.id},this)">Print</button></td></tr>`).join('');
+}
+async function refreshLogs(){
+  const body={limit:200, max_sev:$('fSev').value||null, device_id:$('fDev').value.trim()||null,
+    service:$('fSvc').value.trim()||null, search:$('fSearch').value.trim()||null};
+  try{
+    const data = await (await api('/watchtower/logs', body)).json();
+    $('cards').innerHTML = (data.devices||[]).length
+      ? (data.devices||[]).map(d=>deviceCard(d, data.counts||{}, false)).join('')
+      : '<div class="muted" style="font-size:12px">No devices yet — issue a secret in the Devices tab.</div>';
+    renderLogs(data.logs||[]);
+    const on=data.device_connected;
+    $('connDot').className='dot '+(on?'on':''); $('connTxt').textContent=on?'printer online':'printer offline';
+    $('logMsg').textContent=`${(data.logs||[]).length} shown · ${new Date().toLocaleTimeString()}`;
+  }catch(e){}
+}
+function startLogs(){ refreshLogs(); if(logTimer)clearInterval(logTimer);
+  logTimer=setInterval(()=>{ if($('app').classList.contains('hidden')) return;
+    if(!$('tab-logs').classList.contains('hidden') && $('autoChk').checked) refreshLogs(); }, 5000); }
+async function printLog(id,btn){ btn.disabled=true; btn.textContent='…';
+  try{ const d=await(await api('/watchtower/print',{log_id:id})).json();
+    btn.textContent=d.delivered?'sent':(d.queued?'queued':'err'); }catch(e){ btn.textContent='err'; }
+  setTimeout(()=>{ btn.disabled=false; btn.textContent='Print'; refreshLogs(); },1200); }
+
+// ---- DEVICES ----
+async function refreshDevices(){
+  const data = await (await api('/watchtower/logs', {limit:1})).json();
+  $('devCards').innerHTML = (data.devices||[]).length
+    ? (data.devices||[]).map(d=>deviceCard(d, data.counts||{}, true)).join('')
+    : '<div class="muted" style="font-size:12px">No devices yet.</div>';
+}
+async function createDevice(){
+  const id=$('newDevId').value.trim(), name=$('newDevName').value.trim(), out=$('secretOut');
+  if(!id){ out.innerHTML='<div class="muted">Enter a device id.</div>'; return; }
+  const res=await api('/watchtower/devices/create',{device_id:id,name}); const d=await res.json();
+  if(!res.ok){ out.innerHTML=`<div class="muted">${esc(d.error||'failed')}</div>`; return; }
+  out.innerHTML=`<div class="secretbox"><b>${esc(id)}</b> secret — copy now, shown once:<br>${esc(d.secret)}</div>`;
+  $('newDevId').value=''; $('newDevName').value=''; refreshDevices();
+}
+async function rotate(id){ if(!confirm('Rotate '+id+'? Its current secret stops working.'))return;
+  const d=await(await api('/watchtower/devices/rotate',{device_id:id})).json();
+  if(d.secret) $('secretOut').innerHTML=`<div class="secretbox"><b>${esc(id)}</b> NEW secret:<br>${esc(d.secret)}</div>`; }
+async function revokeDev(id){ if(!confirm('Revoke '+id+'?'))return;
+  await api('/watchtower/devices/revoke',{device_id:id}); refreshDevices(); }
+
+// ---- PASSWORDS ----
+async function refreshPasswords(){
+  const d=await(await api('/admin/state',{})).json();
+  $('pwRows').innerHTML=(d.passwords||[]).map(p=>`<tr>
+    <td>${esc(p.user||'—')}</td><td>${p.used} / ${p.max_uses}</td><td>${p.remaining}</td>
+    <td><span class="pill ${p.active?'ok':'bad'}">${p.active?'active':(p.revoked?'revoked':'used up')}</span></td></tr>`).join('')
+    || '<tr><td colspan="4" class="muted">None.</td></tr>';
+}
+async function createPassword(){
+  const res=await api('/admin/create',{user:$('pwUser').value.trim(), max_uses:+$('pwMax').value||1,
+    new_password:$('pwVal').value.trim()});
+  const d=await res.json(); const out=$('pwOut');
+  if(!res.ok){ out.className='result bad'; out.textContent=d.error||'failed'; return; }
+  out.className='result ok'; out.innerHTML=`Created: <b class="mono">${esc(d.password.password)}</b> (${d.password.remaining} uses)`;
+  $('pwUser').value=''; $('pwVal').value=''; refreshPasswords();
+}
+
+// ---- HISTORY ----
+async function refreshHistory(){
+  const d=await(await api('/admin/state',{})).json();
+  $('histRows').innerHTML=(d.history||[]).map(h=>`<tr>
+    <td class="muted" style="white-space:nowrap">${esc(fmtTime(h.timestamp))}</td>
+    <td>${esc(h.format)}</td><td>${esc(h.user)}</td><td class="msg">${esc(h.label)}</td>
+    <td>${esc(h.status)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">Empty.</td></tr>';
+}
+
+// ---- SETTINGS ----
+async function loadConfig(){
+  const d=await(await api('/config/get',{})).json();
+  $('cfgWidth').value=d.print_width; $('cfgSev').value=d.auto_print_min_sev;
+  $('cfgFuse').value=d.auto_print_max_per_min; $('cfgRet').value=d.log_retention_days;
+}
+async function saveConfig(){
+  const res=await api('/config/set',{print_width:+$('cfgWidth').value, auto_print_min_sev:$('cfgSev').value,
+    auto_print_max_per_min:+$('cfgFuse').value, log_retention_days:+$('cfgRet').value});
+  const m=$('cfgMsg'); if(res.ok){ m.className='result ok'; m.textContent='Saved.'; } else { m.className='result bad'; m.textContent='Failed.'; }
+}
+async function savePassword(){
+  const pw=$('cfgPw').value, m=$('cfgPwMsg');
+  if(pw.length<4){ m.className='result bad'; m.textContent='Min 4 characters.'; return; }
+  const res=await api('/config/set',{new_master_password:pw});
+  if(res.ok){ m.className='result ok'; m.textContent='Master password updated.'; $('cfgPw').value=''; }
+  else { m.className='result bad'; m.textContent=(await res.json()).error||'Failed.'; }
+}
+
+// ---- PRINT (compose) ----
+const FIELD_VIS = {
+  plain:{title:0,text:1,text_size:1,image:1}, centered:{text:1,text_size:1,image:1},
+  boxed:{text:1,text_size:1,border_style:1,image:1}, header_body:{title:1,text:1,text_size:1,image:1},
+  banner:{title:1,text:1,image:0}, list:{title:1,items:1,text_size:1},
+  barcode:{title:1,text:1,barcode_type:1}, qrcode:{title:1,text:1}, image:{image:1},
+  alert:{text:1,alert_type:1,service:1},
+};
+function applyVis(){ const v=FIELD_VIS[$('format').value]||{};
+  document.querySelectorAll('#tab-print [data-field]').forEach(el=>
+    el.classList.toggle('hidden', !v[el.getAttribute('data-field')])); }
+function addItemRow(l='',val=''){ const row=document.createElement('div'); row.className='items-row';
+  row.innerHTML='<input class="item-label" placeholder="label"/><input class="item-value" placeholder="value"/><button type="button" class="ghost mini item-del">×</button>';
+  row.querySelector('.item-label').value=l; row.querySelector('.item-value').value=val;
+  row.querySelector('.item-del').onclick=()=>{ row.remove(); schedulePreview(); };
+  row.querySelectorAll('input').forEach(i=>i.addEventListener('input',schedulePreview));
+  $('itemsContainer').appendChild(row); }
+function collectItems(){ return [...document.querySelectorAll('#tab-print .items-row')].map(r=>({
+  label:r.querySelector('.item-label').value, value:r.querySelector('.item-value').value}))
+  .filter(it=>it.label||it.value); }
+function buildPayload(){ const fmt=$('format').value, v=FIELD_VIS[fmt]||{};
+  const p={format:fmt, print_mode:$('print_mode').value, font:parseInt($('font').value,10)};
+  if(v.title)p.title=$('title').value; if(v.text)p.text=$('text').value;
+  if(v.text_size&&$('text_size').value)p.text_size=parseInt($('text_size').value,10);
+  if(v.barcode_type)p.barcode_type=$('barcode_type').value;
+  if(v.border_style)p.border_style=$('border_style').value;
+  if(v.items)p.items=collectItems();
+  if(v.alert_type){ p.alert_type=$('alert_type').value; p.service=$('service').value; p.sent_at=Math.floor(Date.now()/1000); }
+  if(v.image&&imageB64){ p.image=imageB64; p.image_position=$('image_position').value; }
+  return p; }
+function schedulePreview(){ clearTimeout(previewTimer); previewTimer=setTimeout(doPreview,400); }
+async function doPreview(){ try{
+  const resp=await fetch('/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildPayload())});
+  if(!resp.ok){ const e=await resp.json().catch(()=>({})); setResult(e.error||'Preview error',false); return; }
+  $('preview').src=URL.createObjectURL(await resp.blob());
+}catch(e){ setResult('Preview failed',false); } }
+async function doPrint(){ try{
+  const res=await api('/print', buildPayload()); const d=await res.json();
+  if(res.ok) setResult((d.message||'Sent'),true); else setResult(d.error||'Print failed',false);
+}catch(e){} }
+function setResult(msg,ok){ const el=$('result'); el.textContent=msg; el.className='result '+(ok?'ok':'bad'); }
+const FONT_FAMILY={'1':'monospace','2':'Jersey10','3':'Jacquard12','4':'Doto'};
+
+// ---- wire up ----
+$('suBtn').onclick=doSetup;
+$('suPw2').addEventListener('keydown',e=>{ if(e.key==='Enter')doSetup(); });
+$('gateBtn').onclick=login;
+$('gatePw').addEventListener('keydown',e=>{ if(e.key==='Enter')login(); });
+$('logoutBtn').onclick=showGate;
+document.querySelectorAll('nav.tabs button').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+$('refreshLogs').onclick=refreshLogs;
+$('fSev').onchange=refreshLogs;
+['fDev','fSvc','fSearch'].forEach(id=>$(id).addEventListener('keydown',e=>{ if(e.key==='Enter')refreshLogs(); }));
+$('createDevBtn').onclick=createDevice;
+$('pwCreate').onclick=createPassword;
+$('cfgSave').onclick=saveConfig;
+$('cfgPwSave').onclick=savePassword;
+// compose wiring
+const composer=$('tab-print');
+composer.addEventListener('input',()=>{ applyVis(); schedulePreview(); });
+composer.addEventListener('change',()=>{ applyVis(); schedulePreview(); });
+$('text').addEventListener('keydown',e=>{ if(e.key!=='Tab'||e.shiftKey)return; e.preventDefault();
+  const el=e.target,s=el.selectionStart,en=el.selectionEnd; el.value=el.value.slice(0,s)+'\t'+el.value.slice(en);
+  el.selectionStart=el.selectionEnd=s+1; schedulePreview(); });
+$('addItem').onclick=()=>{ addItemRow(); schedulePreview(); };
+$('refreshBtn').onclick=doPreview;
+$('printBtn').onclick=doPrint;
+$('font').addEventListener('change',()=>{ $('fontSample').style.fontFamily=FONT_FAMILY[$('font').value]||'monospace'; });
+$('imageFile').addEventListener('change',ev=>{ const f=ev.target.files[0];
+  if(!f){ imageB64=null; schedulePreview(); return; }
+  const r=new FileReader(); r.onload=()=>{ imageB64=r.result; schedulePreview(); }; r.readAsDataURL(f); });
+applyVis(); addItemRow('Milk','x2'); addItemRow('Eggs','x12');
+boot();
+</script>
+</body>
+</html>

@@ -115,6 +115,22 @@
             android:layout_marginTop="4dp"
             android:textStyle="bold" />
 
+        <!-- Watchtower (HMAC device identity) -->
+        <TextView style="@style/SectionHeader" android:text="Watchtower pairing" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Issue a device secret in the server's Watchtower dashboard (Devices tab), then paste it here. The internet connection is HMAC-signed with it, and this printer reports its own errors to Watchtower automatically."
+            android:textSize="12sp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText android:id="@+id/deviceIdInput" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="Device id (matches the dashboard)" android:inputType="text" />
+
+        <EditText android:id="@+id/deviceSecretInput" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="Device secret (sph_…) — required for the internet link" android:inputType="textPassword" />
+
         <!-- System -->
         <TextView style="@style/SectionHeader" android:text="System" />
 

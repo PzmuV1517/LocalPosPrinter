@@ -1,72 +1,157 @@
 """
-FastAPI companion server for Sunmi Print Hub.
+Watchtower — FastAPI companion server + fleet error/log dashboard for Sunmi Print Hub.
 
-Endpoints:
-  GET  /                 web UI (compose + live preview)
-  POST /preview          render a payload -> PNG (used by the web UI, debounced)
-  POST /print            render a payload -> push to the connected device as image_raw_bitmap
-  POST /check            check a password -> "no usage limit" / "X usages left" / invalid
-  GET  /status           connection + queue status
-  WS   /messages         the POS app connects here and receives pushed jobs
-  GET  /admin            admin portal (gated by the master password)
-  POST /admin/state      history + active passwords (master password required)
-  POST /admin/create     create a limited-use password (master password required)
-  POST /admin/revoke     revoke a password (master password required)
+Two roles in one process:
 
-The web UI's Print reuses the identical render() call as Preview and ships its output as
-image_raw_bitmap, so what you preview is exactly what prints.
+  1. **Print relay** — the POS app keeps an outbound WebSocket here (``/messages``, HMAC-only);
+     the Print tab and LAN services render jobs and we push them to the device.
+  2. **Watchtower** — an observability platform. Small **Scout** clients sign log events to
+     ``/ingest``; anything at ``err`` severity or worse is auto-printed, and everything is
+     browsable in the single-page dashboard served at ``/``.
+
+Setup & config are done **in the browser** on first run (a setup wizard), persisted in SQLite so
+pulls/updates never re-prompt. Machine clients authenticate with **HMAC-signed requests**; the
+operator logs in with the master password and gets a signed **session token** (localStorage).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import time
+from collections import deque
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from . import crypto
 from . import render as rendermod
-from .passwords import Store
+from .auth import Auth
+from .db import Database, sev_num
+from .logging_setup import setup as setup_logging
 from .relay import relay
 
-# Master password. ACCESS_PASSWORD is the new name; ACCESS_CODE is still read for compat.
-MASTER_PASSWORD = os.environ.get("ACCESS_PASSWORD") or os.environ.get("ACCESS_CODE", "1234")
-PRINT_WIDTH = int(os.environ.get("PRINT_WIDTH", "384"))
+# ---------------------------------------------------------------------------
+# Config — env values are only *bootstrap defaults*; the source of truth is the DB config table,
+# edited via the web Settings/Setup. This is what lets `git pull` + restart keep your settings.
+# ---------------------------------------------------------------------------
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"))
+HMAC_SKEW_SECS = int(os.environ.get("HMAC_SKEW_SECS", "300"))
 
-# Fleet "Hershey Highway" broadcast channel. Every app's always-on fleet listener connects
-# to /hersheyhighway with this shared static secret; the admin can broadcast to all of them.
-# It's baked into the app, so treat it as "has the app => on the fleet", not strong auth.
-# Overridable here so you can rotate it (must match the app's FleetConfig.CODE).
-FLEET_CODE = os.environ.get("FLEET_CODE", "HersheyHighway42069")
+_DEF_WIDTH = int(os.environ.get("PRINT_WIDTH", "384"))
+_DEF_MIN_SEV = os.environ.get("AUTO_PRINT_MIN_SEV", "err")
+_DEF_FUSE = int(os.environ.get("AUTO_PRINT_MAX_PER_MIN", "30"))
+_DEF_RETENTION = int(os.environ.get("LOG_RETENTION_DAYS", "30"))
 
 _HERE = os.path.dirname(__file__)
 _STATIC_DIR = os.path.join(os.path.dirname(_HERE), "static")
 
-store = Store(MASTER_PASSWORD)
-app = FastAPI(title="Sunmi Print Hub — companion server")
+# ---------------------------------------------------------------------------
+# Wiring
+# ---------------------------------------------------------------------------
+log = setup_logging(DATA_DIR, os.environ.get("LOG_LEVEL", "INFO"))
+box = crypto.SecretBox(DATA_DIR)
+db = Database(DATA_DIR, box, lookup_key=box.derive("temp-password-lookup"))
+auth = Auth(db, session_key=box.derive("session"), skew_secs=HMAC_SKEW_SECS)
 
-# Serve the alert font files so the web UI can preview each font in the picker.
+# Bootstrap: if a master password was provided by env and none is stored yet, seed it so a
+# headless deploy skips the wizard. Otherwise the browser setup wizard runs on first visit.
+if not db.is_configured():
+    env_pw = os.environ.get("ACCESS_PASSWORD") or os.environ.get("ACCESS_CODE")
+    if env_pw:
+        auth.set_master(env_pw)
+        db.set_config("print_width", _DEF_WIDTH)
+        db.set_config("auto_print_min_sev", _DEF_MIN_SEV)
+        db.set_config("auto_print_max_per_min", _DEF_FUSE)
+        db.set_config("log_retention_days", _DEF_RETENTION)
+        log.info("Bootstrapped master password from environment; setup wizard skipped.")
+
+_auto_print_times: deque[float] = deque()
+
+app = FastAPI(title="Watchtower — Sunmi Print Hub")
 app.mount("/fonts", StaticFiles(directory=os.path.join(_HERE, "fonts")), name="fonts")
 
-
-def _label_for(payload: dict) -> str:
-    """A short human label for the history row."""
-    return (payload.get("title") or payload.get("text") or payload.get("format") or "print")[:60]
-
-
-# The UI is edited often; tell the browser never to serve a cached copy so changes show up.
 _NO_CACHE = {"Cache-Control": "no-store, max-age=0"}
 
 
+# ---------------------------------------------------------------------------
+# Runtime config accessors (read the DB each time; cheap and always current)
+# ---------------------------------------------------------------------------
+def print_width() -> int:
+    return db.get_int("print_width", _DEF_WIDTH)
+
+
+def auto_print_max_num() -> int:
+    return sev_num(db.get_config("auto_print_min_sev", _DEF_MIN_SEV))
+
+
+def auto_print_fuse() -> int:
+    return db.get_int("auto_print_max_per_min", _DEF_FUSE)
+
+
+def retention_days() -> int:
+    return db.get_int("log_retention_days", _DEF_RETENTION)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def _label_for(payload: dict) -> str:
+    return (payload.get("title") or payload.get("text") or payload.get("format") or "print")[:60]
+
+
+def _client_ip(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for", "")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?")
+
+
+async def _read(request: Request):
+    raw = await request.body()
+    try:
+        data = json.loads(raw or b"{}")
+        if not isinstance(data, dict):
+            data = {}
+    except (ValueError, TypeError):
+        data = {}
+    return raw, data
+
+
+def _hmac_device(request: Request, raw: bytes):
+    res = auth.verify_request(request.method, request.url.path, request.headers, raw)
+    if res.ok:
+        return res.device_id
+    if request.headers.get("x-signature"):
+        log.warning("HMAC rejected on %s from %s (%s): %s",
+                    request.url.path, _client_ip(request), res.device_id, res.reason)
+    return None
+
+
+def _session_ok(request: Request) -> bool:
+    return auth.verify_session(auth.bearer(request.headers.get("authorization")))
+
+
+def _authed_admin(request: Request, body: dict) -> bool:
+    """Operator auth for dashboard endpoints: valid session token OR the master password."""
+    return _session_ok(request) or auth.is_master((body.get("password") or "").strip())
+
+
+def _usage_message(unlimited: bool, remaining) -> str:
+    return "no usage limit" if unlimited else f"{remaining} usage{'s' if remaining != 1 else ''} left"
+
+
+# ---------------------------------------------------------------------------
+# Static page (single-page app served at / and /watchtower)
+# ---------------------------------------------------------------------------
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(os.path.join(_STATIC_DIR, "index.html"), headers=_NO_CACHE)
+    return FileResponse(os.path.join(_STATIC_DIR, "watchtower.html"), headers=_NO_CACHE)
 
 
-@app.get("/admin")
-async def admin_page() -> FileResponse:
-    return FileResponse(os.path.join(_STATIC_DIR, "admin.html"), headers=_NO_CACHE)
+@app.get("/watchtower")
+async def watchtower_alias() -> FileResponse:
+    return FileResponse(os.path.join(_STATIC_DIR, "watchtower.html"), headers=_NO_CACHE)
 
 
 @app.get("/status")
@@ -75,59 +160,136 @@ async def status() -> JSONResponse:
         {
             "device_connected": relay.is_connected(),
             "pending_jobs": sum(len(q) for q in relay.pending.values()),
-            "print_width": PRINT_WIDTH,
+            "print_width": print_width(),
         }
     )
 
 
-@app.post("/check")
-async def check(request: Request) -> JSONResponse:
-    """Non-consuming password check for the box next to the password field."""
-    body = await request.json()
-    info = store.check((body.get("password") or "").strip())
-    if not info["valid"]:
-        return JSONResponse({"valid": False, "message": "Invalid password"})
-    if info["unlimited"]:
-        return JSONResponse({"valid": True, "unlimited": True, "message": "No usage limit"})
-    n = info["remaining"]
+# ---------------------------------------------------------------------------
+# First-run setup (browser wizard). Refuses once configured.
+# ---------------------------------------------------------------------------
+@app.get("/setup/status")
+async def setup_status() -> JSONResponse:
+    return JSONResponse({"configured": db.is_configured()})
+
+
+@app.post("/setup")
+async def setup(request: Request) -> JSONResponse:
+    if db.is_configured():
+        return JSONResponse({"error": "Already configured"}, status_code=409)
+    _, body = await _read(request)
+    pw = (body.get("master_password") or "").strip()
+    if len(pw) < 4:
+        return JSONResponse({"error": "Master password must be at least 4 characters"}, status_code=400)
+    auth.set_master(pw)
+    db.set_config("print_width", int(body.get("print_width") or _DEF_WIDTH))
+    db.set_config("auto_print_min_sev", (body.get("auto_print_min_sev") or _DEF_MIN_SEV))
+    db.set_config("auto_print_max_per_min", int(body.get("auto_print_max_per_min") or _DEF_FUSE))
+    db.set_config("log_retention_days", int(body.get("log_retention_days") or _DEF_RETENTION))
+    log.info("Initial setup completed via web wizard from %s", _client_ip(request))
+    return JSONResponse({"ok": True, "token": auth.login(pw)})
+
+
+# ---------------------------------------------------------------------------
+# Session login (browser)
+# ---------------------------------------------------------------------------
+@app.post("/session/login")
+async def session_login(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    token = auth.login((body.get("password") or "").strip())
+    if not token:
+        log.warning("Failed dashboard login from %s", _client_ip(request))
+        return JSONResponse({"ok": False, "error": "Invalid password"}, status_code=401)
+    log.info("Dashboard login from %s", _client_ip(request))
+    return JSONResponse({"ok": True, "token": token})
+
+
+@app.post("/session/verify")
+async def session_verify(request: Request) -> JSONResponse:
+    return JSONResponse({"ok": _session_ok(request)})
+
+
+# ---------------------------------------------------------------------------
+# Config (view/update; session-gated) — the web Settings tab
+# ---------------------------------------------------------------------------
+@app.post("/config/get")
+async def config_get(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
     return JSONResponse(
         {
-            "valid": True,
-            "unlimited": False,
-            "remaining": n,
-            "message": f"{n} usage{'s' if n != 1 else ''} left",
+            "print_width": print_width(),
+            "auto_print_min_sev": db.get_config("auto_print_min_sev", _DEF_MIN_SEV),
+            "auto_print_max_per_min": auto_print_fuse(),
+            "log_retention_days": retention_days(),
         }
     )
+
+
+@app.post("/config/set")
+async def config_set(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if body.get("print_width") is not None:
+        db.set_config("print_width", int(body["print_width"]))
+    if body.get("auto_print_min_sev"):
+        db.set_config("auto_print_min_sev", str(body["auto_print_min_sev"]))
+    if body.get("auto_print_max_per_min") is not None:
+        db.set_config("auto_print_max_per_min", int(body["auto_print_max_per_min"]))
+    if body.get("log_retention_days") is not None:
+        db.set_config("log_retention_days", int(body["log_retention_days"]))
+    # Changing the master password requires a valid session (already checked above).
+    new_pw = (body.get("new_master_password") or "").strip()
+    if new_pw:
+        if len(new_pw) < 4:
+            return JSONResponse({"error": "Master password too short"}, status_code=400)
+        auth.set_master(new_pw)
+        log.info("Master password changed via Settings from %s", _client_ip(request))
+    return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Password check + rendering
+# ---------------------------------------------------------------------------
+@app.post("/check")
+async def check(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    provided = (body.get("password") or "").strip()
+    if auth.is_master(provided):
+        return JSONResponse({"valid": True, "unlimited": True, "message": "No usage limit"})
+    row = db.find_temp_password(provided)
+    if row and not row["revoked"] and (row["max_uses"] - row["used"]) > 0:
+        n = row["max_uses"] - row["used"]
+        return JSONResponse({"valid": True, "unlimited": False, "remaining": n,
+                             "message": f"{n} usage{'s' if n != 1 else ''} left"})
+    return JSONResponse({"valid": False, "message": "Invalid password"})
 
 
 @app.post("/preview")
 async def preview(request: Request) -> Response:
-    payload = await request.json()
+    _, payload = await _read(request)
     try:
-        img = rendermod.render(payload, PRINT_WIDTH)
+        img = rendermod.render(payload, print_width())
     except rendermod.RenderError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
     return Response(content=rendermod.to_png_bytes(img), media_type="image/png")
 
 
-def _usage_message(unlimited: bool, remaining) -> str:
-    if unlimited:
-        return "no usage limit"
-    return f"{remaining} usage{'s' if remaining != 1 else ''} left"
-
-
+# ---------------------------------------------------------------------------
+# Print / alert intake
+# ---------------------------------------------------------------------------
 @app.post("/print")
 async def do_print(request: Request) -> JSONResponse:
-    return await _print_payload(await request.json())
+    raw, payload = await _read(request)
+    return await _print_payload(payload, authed_device=_hmac_device(request, raw),
+                                authed_session=_session_ok(request))
 
 
 @app.post("/alert")
 async def do_alert(request: Request) -> JSONResponse:
-    """MUIE alert intake for LAN services. Renders the envelope and relays it to the device.
-
-    Body: { password, alert_type|type, message|text, service, sent_at, print_mode? }
-    """
-    body = await request.json()
+    raw, body = await _read(request)
     payload = {
         "password": body.get("password") or body.get("code"),
         "format": "alert",
@@ -137,148 +299,220 @@ async def do_alert(request: Request) -> JSONResponse:
         "sent_at": body.get("sent_at") or body.get("timestamp"),
         "print_mode": body.get("print_mode", "receipt"),
     }
-    return await _print_payload(payload)
+    return await _print_payload(payload, authed_device=_hmac_device(request, raw),
+                                authed_session=_session_ok(request))
 
 
-async def _print_payload(payload: dict) -> JSONResponse:
-    # Accept 'password'; fall back to legacy 'code'.
-    provided = (payload.get("password") or payload.get("code") or "").strip()
-
-    # Validate WITHOUT consuming — a use is only deducted once the print actually goes through.
-    info = store.check(provided)
-    if not info["valid"]:
-        return JSONResponse(
-            {"error": "Invalid password or no usages left"}, status_code=401
-        )
-
-    # Render once, ship the exact pixels as image_raw_bitmap. A render failure costs no use.
-    try:
-        img = rendermod.render(payload, PRINT_WIDTH)
-    except rendermod.RenderError as exc:
-        return JSONResponse({"error": str(exc)}, status_code=400)
-
+async def _render_and_submit(payload: dict, on_delivered=None) -> bool:
+    """Render to exact pixels and push to the device (trusted HMAC channel — no per-job password)."""
+    img = rendermod.render(payload, print_width())
     job = {
-        # Send both keys so a device on either naming accepts it.
-        "password": store.master,
-        "code": store.master,
         "format": "image",
         "print_mode": payload.get("print_mode", "receipt"),
         "image_raw_bitmap": rendermod.to_base64_png(img),
     }
+    return await relay.submit(job, on_delivered=on_delivered)
 
+
+async def _print_payload(payload: dict, authed_device=None, authed_session=False) -> JSONResponse:
+    provided = (payload.get("password") or payload.get("code") or "").strip()
+
+    if authed_device or authed_session:
+        user, unlimited, temp_pw = (authed_device or "operator"), True, None
+    elif auth.is_master(provided):
+        user, unlimited, temp_pw = "master", True, None
+    else:
+        row = db.find_temp_password(provided)
+        if not row or row["revoked"] or (row["max_uses"] - row["used"]) <= 0:
+            return JSONResponse({"error": "Invalid password or no usages left"}, status_code=401)
+        user, unlimited, temp_pw = row["user"], False, provided
+
+    try:
+        img = rendermod.render(payload, print_width())
+    except rendermod.RenderError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+
+    job = {
+        "format": "image",
+        "print_mode": payload.get("print_mode", "receipt"),
+        "image_raw_bitmap": rendermod.to_base64_png(img),
+    }
     fmt = payload.get("format", "?")
     label = _label_for(payload)
-
-    # Deduct the use and log "printed" only when the relay actually hands the job to a device
-    # (immediately, or later when a queued job flushes on reconnect).
     consumed: dict = {}
 
     def on_delivered() -> None:
-        consumed.update(store.consume(provided))
-        store.add_history(
-            {"format": fmt, "label": label, "user": info["user"], "status": "printed"}
-        )
+        if temp_pw and db.consume_temp_password(temp_pw):
+            row2 = db.find_temp_password(temp_pw)
+            consumed["remaining"] = (row2["max_uses"] - row2["used"]) if row2 else 0
+        db.add_history({"format": fmt, "label": label, "user": user, "status": "printed"})
+        log.info("Printed [%s] '%s' for %s", fmt, label, user)
 
     delivered = await relay.submit(job, on_delivered=on_delivered)
 
     if delivered:
-        unlimited = consumed.get("unlimited", info["unlimited"])
-        remaining = consumed.get("remaining", info["remaining"])
+        remaining = consumed.get("remaining")
         return JSONResponse(
-            {
-                "ok": True,
-                "delivered": True,
-                "queued": False,
-                "unlimited": unlimited,
-                "remaining": remaining,
-                "usage_message": _usage_message(unlimited, remaining),
-                "message": "Sent to device",
-            }
+            {"ok": True, "delivered": True, "queued": False, "unlimited": unlimited,
+             "remaining": remaining, "usage_message": _usage_message(unlimited, remaining),
+             "message": "Sent to device"}
         )
 
-    # Queued: nothing was consumed yet; record the queue and count the use only when it prints.
-    store.add_history(
-        {"format": fmt, "label": label, "user": info["user"], "status": "queued"}
+    db.add_history({"format": fmt, "label": label, "user": user, "status": "queued"})
+    log.info("Queued [%s] '%s' for %s (no device connected)", fmt, label, user)
+    return JSONResponse(
+        {"ok": True, "delivered": False, "queued": True, "unlimited": unlimited,
+         "remaining": None, "usage_message": _usage_message(unlimited, None),
+         "message": "No device connected — job queued (a temp use counts only when it prints)"}
+    )
+
+
+# ---------------------------------------------------------------------------
+# Watchtower — log ingestion (HMAC only)
+# ---------------------------------------------------------------------------
+def _auto_print_allowed() -> bool:
+    fuse = auto_print_fuse()
+    if fuse <= 0:
+        return True
+    now = time.time()
+    while _auto_print_times and now - _auto_print_times[0] > 60:
+        _auto_print_times.popleft()
+    return len(_auto_print_times) < fuse
+
+
+def _log_to_alert_payload(device_id: str, severity: str, service: str, message: str, ts) -> dict:
+    return {
+        "format": "alert",
+        "alert_type": severity,
+        "text": message,
+        "service": f"{device_id}" + (f" / {service}" if service else ""),
+        "sent_at": ts,
+        "print_mode": "receipt",
+    }
+
+
+@app.post("/ingest")
+async def ingest(request: Request) -> JSONResponse:
+    raw, body = await _read(request)
+    device_id = _hmac_device(request, raw)
+    if not device_id:
+        return JSONResponse({"error": "Unauthorized (HMAC required)"}, status_code=401)
+
+    severity = (body.get("severity") or body.get("level") or "info").lower()
+    if severity not in ("emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"):
+        severity = "info"
+    message = str(body.get("message") or body.get("text") or "")
+    service = str(body.get("service") or "")
+    meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+
+    should_print = sev_num(severity) <= auto_print_max_num()
+    printed = False
+    if should_print and _auto_print_allowed():
+        try:
+            payload = _log_to_alert_payload(device_id, severity, service, message, body.get("ts") or time.time())
+            if await _render_and_submit(payload):
+                printed = True
+                _auto_print_times.append(time.time())
+        except Exception as exc:
+            log.error("Auto-print failed for %s/%s: %s", device_id, service, exc)
+    elif should_print:
+        log.warning("Auto-print fuse tripped (>%d/min) — %s/%s not printed", auto_print_fuse(), device_id, service)
+
+    log_id = db.add_log(device_id=device_id, severity=severity, message=message, service=service,
+                        meta=meta, source_ip=_client_ip(request), printed=printed)
+    log.info("Ingest #%d [%s] %s/%s printed=%s", log_id, severity, device_id, service, printed)
+    return JSONResponse({"ok": True, "id": log_id, "printed": printed, "would_print": should_print})
+
+
+# ---------------------------------------------------------------------------
+# Watchtower — dashboard data (session or master password)
+# ---------------------------------------------------------------------------
+@app.post("/watchtower/logs")
+async def watchtower_logs(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    max_sev = body.get("max_sev")
+    logs = db.list_logs(
+        limit=int(body.get("limit", 200)),
+        before_id=body.get("before_id"),
+        max_sev=sev_num(max_sev) if max_sev else None,
+        device_id=body.get("device_id") or None,
+        service=body.get("service") or None,
+        search=(body.get("search") or "").strip() or None,
     )
     return JSONResponse(
-        {
-            "ok": True,
-            "delivered": False,
-            "queued": True,
-            "unlimited": info["unlimited"],
-            "remaining": info["remaining"],
-            "usage_message": _usage_message(info["unlimited"], info["remaining"]),
-            "message": "No device connected — job queued (a use is counted only when it prints)",
-        }
+        {"logs": logs, "devices": db.list_devices(), "counts": db.severity_counts(),
+         "device_connected": relay.is_connected()}
     )
 
 
-# ---------------------------------------------------------------------------
-# Admin portal (gated by the master password)
-# ---------------------------------------------------------------------------
-def _require_master(body: dict) -> bool:
-    return store.is_master((body.get("password") or "").strip())
+@app.post("/watchtower/print")
+async def watchtower_print(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    entry = db.get_log(int(body.get("log_id", 0)))
+    if not entry:
+        return JSONResponse({"error": "Log not found"}, status_code=404)
+    payload = _log_to_alert_payload(entry["device_id"], entry["severity"], entry["service"],
+                                    entry["message"], entry["ts"])
+    try:
+        delivered = await _render_and_submit(payload, on_delivered=lambda: db.mark_printed(entry["id"]))
+    except rendermod.RenderError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    log.info("Manual print of log #%s (delivered=%s)", entry["id"], delivered)
+    return JSONResponse({"ok": True, "delivered": delivered, "queued": not delivered})
 
 
+@app.post("/watchtower/devices/create")
+async def watchtower_devices_create(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    device_id = (body.get("device_id") or "").strip()
+    if not device_id:
+        return JSONResponse({"error": "device_id required"}, status_code=400)
+    secret = db.create_device(device_id, name=(body.get("name") or "").strip())
+    log.info("Device created/rekeyed: %s", device_id)
+    return JSONResponse({"ok": True, "device_id": device_id, "secret": secret})
+
+
+@app.post("/watchtower/devices/rotate")
+async def watchtower_devices_rotate(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    secret = db.rotate_device_secret((body.get("device_id") or "").strip())
+    if secret is None:
+        return JSONResponse({"error": "Device not found"}, status_code=404)
+    return JSONResponse({"ok": True, "secret": secret})
+
+
+@app.post("/watchtower/devices/revoke")
+async def watchtower_devices_revoke(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return JSONResponse({"ok": db.revoke_device((body.get("device_id") or "").strip())})
+
+
+# ---------------------------------------------------------------------------
+# Temp passwords + history (Passwords / History tabs)
+# ---------------------------------------------------------------------------
 @app.post("/admin/state")
 async def admin_state(request: Request) -> JSONResponse:
-    body = await request.json()
-    if not _require_master(body):
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    return JSONResponse(
-        {
-            "history": store.list_history(),
-            "passwords": store.list_passwords(),
-            "device_connected": relay.is_connected(),
-            "fleet_count": relay.fleet_count(),
-        }
-    )
-
-
-@app.post("/admin/broadcast")
-async def admin_broadcast(request: Request) -> JSONResponse:
-    """Broadcast one job to every printer on the fleet channel. Requires the master
-    password (to be in admin) AND the app's static bypass code."""
-    body = await request.json()
-    if not _require_master(body):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    if (body.get("bypass_code") or "") != FLEET_CODE:
-        return JSONResponse({"error": "Invalid bypass code"}, status_code=403)
-
-    payload = dict(body.get("payload") or {})
-    payload.pop("password", None)  # fleet devices trust the channel; no per-job password
-    payload.pop("code", None)
-
-    count = await relay.broadcast_fleet(payload)
-    store.add_history(
-        {
-            "format": payload.get("format", "?"),
-            "label": _label_for(payload),
-            "user": "fleet-broadcast",
-            "status": f"broadcast x{count}",
-        }
-    )
-    return JSONResponse({"ok": True, "delivered": count, "fleet_count": relay.fleet_count()})
-
-
-@app.post("/admin/fleet")
-async def admin_fleet(request: Request) -> JSONResponse:
-    """List devices connected to the fleet channel. Requires master password AND the
-    correct bypass code (so it doubles as a 'check the bypass code' action)."""
-    body = await request.json()
-    if not _require_master(body):
-        return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    if (body.get("bypass_code") or "") != FLEET_CODE:
-        return JSONResponse({"valid": False, "error": "Invalid bypass code"}, status_code=403)
-    return JSONResponse(
-        {"valid": True, "count": relay.fleet_count(), "devices": relay.list_fleet()}
-    )
+    return JSONResponse({"history": db.list_history(), "passwords": db.list_temp_passwords(),
+                         "device_connected": relay.is_connected()})
 
 
 @app.post("/admin/create")
 async def admin_create(request: Request) -> JSONResponse:
-    body = await request.json()
-    if not _require_master(body):
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
         max_uses = int(body.get("max_uses", 1))
@@ -286,35 +520,34 @@ async def admin_create(request: Request) -> JSONResponse:
         return JSONResponse({"error": "max_uses must be a number"}, status_code=400)
     if max_uses < 1:
         return JSONResponse({"error": "max_uses must be at least 1"}, status_code=400)
-    tp = store.create(
-        user=body.get("user", ""),
-        max_uses=max_uses,
-        password=body.get("new_password"),
-    )
-    return JSONResponse({"ok": True, "password": tp.to_public()})
+    pw = (body.get("new_password") or "").strip() or ("t_" + crypto.secrets.token_urlsafe(6))
+    db.create_temp_password(pw, user=body.get("user", ""), max_uses=max_uses)
+    return JSONResponse({"ok": True, "password": {"password": pw, "user": body.get("user", ""),
+                                                  "max_uses": max_uses, "remaining": max_uses}})
 
 
 @app.post("/admin/revoke")
 async def admin_revoke(request: Request) -> JSONResponse:
-    body = await request.json()
-    if not _require_master(body):
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    ok = store.revoke((body.get("target") or "").strip())
-    return JSONResponse({"ok": ok})
+    return JSONResponse({"ok": db.revoke_temp_password((body.get("target") or "").strip())})
 
 
+# ---------------------------------------------------------------------------
+# WebSocket — POS app (HMAC only)
+# ---------------------------------------------------------------------------
 @app.websocket("/messages")
 async def messages(ws: WebSocket) -> None:
-    # Auth via ?password=... (legacy ?code=...) on the handshake. The app also sends an auth
-    # frame on open, which we simply swallow below.
-    provided = ws.query_params.get("password") or ws.query_params.get("code")
-    if not store.is_master(provided):
-        await ws.close(code=4401)  # policy violation / unauthorized
+    res = auth.verify_request("GET", "/messages", ws.headers, b"")
+    if not res.ok:
+        log.warning("Device WS rejected: %s", res.reason)
+        await ws.close(code=4401)
         return
-
-    device_id = ws.query_params.get("device_id", "default")
+    device_id = res.device_id or "default"
     await ws.accept()
     client = await relay.register(ws, device_id)
+    log.info("Printer device connected: %s", device_id)
     try:
         while True:
             await ws.receive_text()
@@ -324,38 +557,29 @@ async def messages(ws: WebSocket) -> None:
         pass
     finally:
         await relay.unregister(client)
+        log.info("Printer device disconnected: %s", device_id)
 
 
-@app.websocket("/hersheyhighway")
-async def hersheyhighway(ws: WebSocket) -> None:
-    """Fleet broadcast channel. Every app connects here with the shared static bypass code;
-    the admin can then broadcast one job to all of them at once, or check who's connected."""
-    provided = ws.query_params.get("password") or ws.query_params.get("code")
-    if provided != FLEET_CODE:
-        await ws.close(code=4401)
-        return
-    # Real client IP: X-Forwarded-For's first hop (behind a proxy), else the socket peer.
-    fwd = ws.headers.get("x-forwarded-for", "")
-    ip = fwd.split(",")[0].strip() if fwd else (ws.client.host if ws.client else "?")
-    await ws.accept()
-    client = await relay.register_fleet(ws, ip=ip)
-    try:
+# ---------------------------------------------------------------------------
+# Background retention pruning
+# ---------------------------------------------------------------------------
+@app.on_event("startup")
+async def _startup() -> None:
+    removed = db.prune_logs(retention_days())
+    if removed:
+        log.info("Pruned %d logs older than %d days", removed, retention_days())
+
+    async def _pruner() -> None:
         while True:
-            msg = await ws.receive_text()
-            # The app sends an auth/info frame on connect carrying device details.
+            await asyncio.sleep(6 * 3600)
             try:
-                data = json.loads(msg)
-                if isinstance(data, dict) and data.get("type") in ("auth", "info"):
-                    client.info = {
-                        k: data.get(k)
-                        for k in ("device_id", "serial", "model", "version")
-                        if data.get(k) is not None
-                    }
-            except (ValueError, TypeError):
-                pass
-    except WebSocketDisconnect:
-        pass
-    except Exception:
-        pass
-    finally:
-        await relay.unregister_fleet(client)
+                n = db.prune_logs(retention_days())
+                if n:
+                    log.info("Pruned %d expired logs", n)
+            except Exception as exc:
+                log.error("Log prune failed: %s", exc)
+
+    asyncio.create_task(_pruner())
+    log.info("Watchtower up. configured=%s auto-print<=%s fuse=%d/min retention=%dd",
+             db.is_configured(), db.get_config("auto_print_min_sev", _DEF_MIN_SEV),
+             auto_print_fuse(), retention_days())

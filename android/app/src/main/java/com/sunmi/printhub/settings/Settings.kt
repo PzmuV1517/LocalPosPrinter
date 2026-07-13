@@ -82,6 +82,24 @@ class Settings(context: Context) {
         get() = prefs.getString(K_NET_DOMAIN, "") ?: ""
         set(v) = prefs.edit().putString(K_NET_DOMAIN, v).apply()
 
+    // ---- Watchtower / HMAC device identity ----
+    // A stable per-install id (issue a matching secret in the Watchtower dashboard). When a
+    // secret is set, the internet listener signs its connection with HMAC instead of putting
+    // the access password in the URL.
+    var deviceId: String
+        get() = prefs.getString(K_DEVICE_ID, null) ?: generateDeviceId()
+        set(v) = prefs.edit().putString(K_DEVICE_ID, v.trim()).apply()
+
+    var deviceSecret: String
+        get() = prefs.getString(K_DEVICE_SECRET, "") ?: ""
+        set(v) = prefs.edit().putString(K_DEVICE_SECRET, v.trim()).apply()
+
+    private fun generateDeviceId(): String {
+        val id = "sunmi-" + (100000 + Random.nextInt(900000)).toString()
+        prefs.edit().putString(K_DEVICE_ID, id).apply()
+        return id
+    }
+
     // ---- boot ----
     var autoStart: Boolean
         get() = prefs.getBoolean(K_AUTOSTART, true)
@@ -105,6 +123,8 @@ class Settings(context: Context) {
         private const val K_MQTT_PREFIX = "mqtt_prefix"
         private const val K_NET_ON = "internet_enabled"
         private const val K_NET_DOMAIN = "internet_domain"
+        private const val K_DEVICE_ID = "device_id"
+        private const val K_DEVICE_SECRET = "device_secret"
         private const val K_AUTOSTART = "auto_start"
     }
 }

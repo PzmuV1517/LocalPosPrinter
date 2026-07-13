@@ -1,8 +1,6 @@
 package com.sunmi.printhub.net
 
-import android.os.Build
 import android.util.Log
-import com.sunmi.printhub.BuildConfig
 import com.sunmi.printhub.core.Hub
 import com.sunmi.printhub.core.PrintDispatcher
 import com.sunmi.printhub.db.JobSource
@@ -14,18 +12,18 @@ import okhttp3.WebSocketListener
 import java.util.concurrent.TimeUnit
 
 /**
- * Outbound WebSocket client to the companion server's /messages relay. Connects to
- * wss://<domain>/messages?password=<access-password>, then sits and listens for pushed jobs.
- * Reconnects with exponential backoff — this is an always-on listener, not something
- * to babysit.
+ * Outbound WebSocket client to the Watchtower server's /messages relay. The connection is
+ * authenticated with **HMAC** (device id + secret, issued in the dashboard) — the secret never
+ * appears in the URL. Because the channel itself is authenticated, pushed jobs are trusted and
+ * printed without re-checking a per-job password.
+ *
+ * Reconnects with exponential backoff; this is an always-on listener.
  */
 class InternetListener(
     private val domain: String,
-    private val accessPassword: String,
+    private val deviceId: String,
+    private val deviceSecret: String,
     private val path: String = "/messages",
-    /** Fleet channel: connection is already trusted via the shared secret, so jobs print
-     *  without re-checking the per-device access password, and status updates fleetConnected. */
-    private val fleet: Boolean = false,
 ) {
 
     companion object {
@@ -44,8 +42,15 @@ class InternetListener(
     @Volatile private var backoff = MIN_BACKOFF_MS
     private var reconnectThread: Thread? = null
 
+    /** True only when we have the HMAC identity needed to authenticate. */
+    private val ready: Boolean get() = deviceSecret.isNotBlank() && deviceId.isNotBlank() && domain.isNotBlank()
+
     fun start() {
         if (running) return
+        if (!ready) {
+            Log.w(TAG, "Not starting: no device secret configured (pair this printer in the Watchtower dashboard)")
+            return
+        }
         running = true
         connect()
     }
@@ -57,7 +62,7 @@ class InternetListener(
         } catch (_: Throwable) {
         }
         webSocket = null
-        setConnected(false)
+        Hub.internetConnected = false
         reconnectThread?.interrupt()
     }
 
@@ -69,48 +74,28 @@ class InternetListener(
             d.startsWith("https://") -> "wss://" + d.removePrefix("https://")
             else -> "wss://$d"
         }
-        return "$base$path?password=$accessPassword"
-    }
-
-    private fun setConnected(value: Boolean) {
-        if (fleet) Hub.fleetConnected = value else Hub.internetConnected = value
-    }
-
-    private fun buildAuthFrame(): String {
-        val obj = org.json.JSONObject()
-        obj.put("type", "auth")
-        obj.put("password", accessPassword)
-        if (fleet) {
-            obj.put("serial", Hub.printer.serialNo() ?: "")
-            obj.put("model", "${Build.MANUFACTURER} ${Build.MODEL}")
-            obj.put("version", BuildConfig.VERSION_NAME)
-        }
-        return obj.toString()
+        return "$base$path"
     }
 
     private fun connect() {
         if (!running) return
-        val request = Request.Builder().url(url()).build()
-        Log.i(TAG, "Connecting to ${request.url.redact()}")
+        val builder = Request.Builder().url(url())
+        // Sign the upgrade GET; body is empty for a WS handshake.
+        HmacSigner.headers(deviceSecret, deviceId, "GET", path).forEach { (k, v) -> builder.header(k, v) }
+        val request = builder.build()
+        Log.i(TAG, "Connecting to ${request.url.redact()} (HMAC as $deviceId)")
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.i(TAG, if (fleet) "Fleet listener connected" else "Internet listener connected")
-                setConnected(true)
+                Log.i(TAG, "Internet listener connected")
+                Hub.internetConnected = true
                 backoff = MIN_BACKOFF_MS
-                // Auth frame (also lets servers that prefer a frame over the query param work).
-                // On the fleet channel we include device info so the admin's bypass check can
-                // list who's connected.
-                webSocket.send(buildAuthFrame())
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                // Ignore server control frames; only dispatch things that look like jobs. Fleet
-                // jobs are trusted via the channel secret, so they print without the local password.
+                // The channel is HMAC-authenticated, so jobs are trusted (no per-job password).
                 if (text.contains("\"format\"") || text.contains("\"image")) {
                     PrintDispatcher.dispatchJson(
-                        text, JobSource.INTERNET,
-                        requirePassword = !fleet,
-                        sourceInfo = if (fleet) "fleet" else "internet",
+                        text, JobSource.INTERNET, requirePassword = false, sourceInfo = "internet"
                     )
                 } else {
                     Log.d(TAG, "Non-job frame: ${text.take(120)}")
@@ -118,18 +103,18 @@ class InternetListener(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                setConnected(false)
+                Hub.internetConnected = false
                 webSocket.close(1000, null)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                setConnected(false)
+                Hub.internetConnected = false
                 scheduleReconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.w(TAG, "${if (fleet) "Fleet" else "Internet"} listener failure: ${t.message}")
-                setConnected(false)
+                Log.w(TAG, "Internet listener failure: ${t.message}")
+                Hub.internetConnected = false
                 scheduleReconnect()
             }
         })

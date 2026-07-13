@@ -89,6 +89,18 @@ object PrintDispatcher {
         } else {
             Log.i(TAG, "Job ${result.jobId} ${source.wire} ${result.format} -> ${result.status.wire}")
         }
+        // Self-report failures/rejections to Watchtower so this printer shows up in its own
+        // dashboard. FAILED prints are errors (auto-printed by the server); auth rejects are
+        // security-relevant warnings. Successes stay quiet to avoid flooding the stream.
+        when (result.status) {
+            JobStatus.FAILED -> Hub.reportEvent(
+                "err", "print failed [${result.format}]: ${result.error ?: "unknown"}", "print/${source.wire}"
+            )
+            JobStatus.REJECTED -> Hub.reportEvent(
+                "warning", "job rejected [${result.format}]: ${result.error ?: "unauthorized"}", "print/${source.wire}"
+            )
+            else -> {}
+        }
         try {
             Hub.jobCompleteListener?.invoke(result, source)
         } catch (_: Throwable) {
