@@ -221,15 +221,28 @@ exec python3 "$HOME/.local/share/scout/scout.py" "$@"
 LAUNCH
 chmod +x "$BIN/scout"
 
+# Put ~/.local/bin on PATH for future shells (idempotent across common rc files).
+ONPATH=0; case ":$PATH:" in *":$BIN:"*) ONPATH=1 ;; esac
+if [ "$ONPATH" = "0" ]; then
+  for rc in "$HOME/.bashrc" "$HOME/.profile" "$HOME/.zshrc"; do
+    [ -f "$rc" ] || continue
+    grep -q 'Watchtower Scout installer' "$rc" 2>/dev/null && continue
+    printf '\n# Watchtower Scout installer\nexport PATH="%s:$PATH"\n' "$BIN" >> "$rc"
+  done
+fi
+
 echo ""
 echo "Scout installed: $BIN/scout   (config: $CONF)"
-case ":$PATH:" in *":$BIN:"*) ;; *) echo "NOTE: add $BIN to your PATH (e.g. echo 'export PATH=\$HOME/.local/bin:\$PATH' >> ~/.bashrc)";; esac
 echo ""
 echo "Finish setup — paste the secret shown in the Watchtower dashboard:"
-[ -z "$DEVICE_ID" ] && echo "  scout set-device <DEVICE_ID>"
-echo "  scout set-secret <SECRET>"
+[ -z "$DEVICE_ID" ] && echo "  $BIN/scout set-device <DEVICE_ID>"
+echo "  $BIN/scout set-secret <SECRET>"
 echo ""
-echo "Then test:  scout -s info --service test \"hello watchtower\""
+echo "Test:  $BIN/scout -s info --service test \"hello watchtower\""
+if [ "$ONPATH" = "0" ]; then
+  echo ""
+  echo "('scout' will be on PATH in new shells. For THIS shell: export PATH=\"$BIN:\$PATH\")"
+fi
 """
 
 
