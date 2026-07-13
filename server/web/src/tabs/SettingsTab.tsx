@@ -60,6 +60,13 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     }
     setUpdating(false)
   }
+  async function doRestart() {
+    if (!confirm('Restart the server now (no code pull)?')) return
+    setUpdating(true); setUpdateLog('Restarting…')
+    try { await guard(api.restartServer()) } catch { /* connection may drop as it restarts */ }
+    waitForRestart()
+    setUpdating(false)
+  }
 
   return (
     <>
@@ -97,7 +104,10 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           Pull the latest code from <span className="mono">main</span> and restart the service — no manual git pull.
           (The service must run under a supervisor that restarts it: systemd <span className="mono">Restart=always</span> or Docker <span className="mono">restart: unless-stopped</span>.)
         </p>
-        <button onClick={doUpdate} disabled={updating}>Pull latest &amp; restart</button>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <button style={{ flex: '0 0 auto' }} onClick={doUpdate} disabled={updating}>Pull latest &amp; restart</button>
+          <button className="ghost" style={{ flex: '0 0 auto' }} onClick={doRestart} disabled={updating}>Restart service</button>
+        </div>
         {updateLog !== null && <pre className="updatelog mono">{updateLog}</pre>}
       </div>
     </>

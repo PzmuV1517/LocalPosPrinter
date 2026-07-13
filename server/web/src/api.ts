@@ -88,6 +88,7 @@ export const checkPassword = (password: string) => post<{ valid: boolean; messag
 export const getConfig = () => post<ServerConfig>('/config/get', {})
 export const setConfig = (body: Record<string, unknown>) => postRaw('/config/set', body)
 export const updateServer = () => post<UpdateResult>('/config/update', {})
+export const restartServer = () => post<{ ok: boolean; restarting: boolean }>('/config/restart', {})
 
 // ---- print / preview ----
 export async function preview(payload: unknown): Promise<{ ok: true; url: string } | { ok: false; error: string }> {

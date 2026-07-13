@@ -414,6 +414,18 @@ def _restart_process() -> None:
         log.error("Self-update restart failed: %s", exc)
 
 
+@app.post("/config/restart")
+async def config_restart(request: Request) -> JSONResponse:
+    """Restart the service without pulling — same restart path as self-update, no git/pip."""
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    log.info("Manual restart requested from %s", _client_ip(request))
+    await relay.close_all()
+    threading.Timer(1.0, _restart_process).start()
+    return JSONResponse({"ok": True, "restarting": True})
+
+
 @app.post("/config/update")
 async def config_update(request: Request) -> JSONResponse:
     _, body = await _read(request)

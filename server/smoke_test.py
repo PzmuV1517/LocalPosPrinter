@@ -229,8 +229,9 @@ assert client.post("/session/login", json={"username": USERNAME, "password": MAS
 assert client.post("/session/login", json={"username": USERNAME, "password": "brand-new-pw"}).status_code == 200
 print("  ok  master password change takes effect")
 
-# ---- self-update endpoint is auth-gated (don't trigger a real pull here) ----
+# ---- update/restart endpoints are auth-gated (don't trigger a real pull/restart here) ----
 assert client.post("/config/update", json={}).status_code == 401
-print("  ok  /config/update requires auth")
+assert client.post("/config/restart", json={}).status_code == 401
+print("  ok  /config/update and /config/restart require auth")
 
 print("\nALL SMOKE TESTS PASSED")
