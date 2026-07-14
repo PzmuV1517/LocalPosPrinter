@@ -66,12 +66,13 @@ assert client.get("/setup/status").json()["configured"] is True
 assert client.post("/setup", json={"username": "x", "master_password": "yyyy"}).status_code == 409
 print("  ok  /setup refuses re-run -> 409")
 
-# ---- rendering endpoints ----
-resp = client.post("/preview", json={"format": "plain", "text": "hi"})
+# ---- rendering endpoints (now auth-gated) ----
+assert client.post("/preview", json={"format": "plain", "text": "hi"}).status_code == 401
+resp = client.post("/preview", json={"format": "plain", "text": "hi", "password": MASTER_PASSWORD})
 assert resp.status_code == 200 and resp.headers["content-type"] == "image/png"
-print("  ok  POST /preview -> png", len(resp.content), "bytes")
+print("  ok  POST /preview -> 401 unauth, png when authed", len(resp.content), "bytes")
 
-resp = client.post("/preview", json={"format": "barcode", "text": "x"})
+resp = client.post("/preview", json={"format": "barcode", "text": "x", "password": MASTER_PASSWORD})
 assert resp.status_code == 400
 print("  ok  POST /preview bad -> 400")
 
@@ -248,8 +249,20 @@ print("  ok  /scout.py + /install-scout served")
 # ---- temp password still works end to end ----
 resp = client.post("/admin/create", json={"password": MASTER_PASSWORD, "user": "guest", "max_uses": 2}, headers=AUTH)
 TEMP = resp.json()["password"]["password"]
-assert client.post("/check", json={"password": TEMP}).json()["remaining"] == 2
-print("  ok  temp password created + /check reports remaining")
+assert client.post("/check", json={"target": TEMP}).status_code == 401  # now auth-gated
+assert client.post("/check", json={"target": TEMP}, headers=AUTH).json()["remaining"] == 2
+print("  ok  temp password created + /check (auth-gated) reports remaining")
+
+# ---- security: healthz open, status/webauthn gated ----
+assert client.get("/healthz").json()["ok"] is True
+assert client.post("/status", json={}).status_code == 401
+assert client.post("/status", json={}, headers=AUTH).json()["print_width"] == 384
+assert client.post("/webauthn/list", json={}).status_code == 401
+assert client.post("/webauthn/list", json={}, headers=AUTH).json()["passkeys"] == []
+assert client.post("/webauthn/login/begin", json={}).status_code == 404  # no passkeys registered
+sec = client.get("/healthz").headers
+assert sec.get("content-security-policy") and sec.get("x-frame-options") == "DENY"
+print("  ok  security: healthz open, status/webauthn/CSP gated")
 
 # ---- session-authenticated print needs no password (operator is logged in) ----
 resp = client.post("/print", json={"format": "plain", "text": "from operator"}, headers=AUTH)

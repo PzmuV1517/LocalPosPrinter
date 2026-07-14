@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api'
-import { useGuard } from '../common'
+import { fmtTime, useGuard } from '../common'
 import type { NotifySettings, Severity } from '../types'
 
 const SEVS: Severity[] = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info']
@@ -25,6 +25,13 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
   const [notifyMsg, setNotifyMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [updateLog, setUpdateLog] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
+  const [passkeys, setPasskeys] = useState<api.Passkey[]>([])
+  const [pkMsg, setPkMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  const loadPasskeys = useCallback(async () => {
+    const d = await guard(api.listPasskeys())
+    if (d) setPasskeys(d.passkeys)
+  }, [guard])
 
   const load = useCallback(async () => {
     const d = await guard(api.getConfig())
@@ -37,8 +44,24 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
       setUser(d.username)
       setNotify(d.notify || EMPTY_NOTIFY)
     }
-  }, [guard])
+    loadPasskeys()
+  }, [guard, loadPasskeys])
   useEffect(() => { load() }, [load])
+
+  async function addPasskey() {
+    const label = prompt('Name this passkey (e.g. "Mac Touch ID", "Phone"):', 'this device')
+    if (label === null) return
+    setPkMsg({ ok: true, text: 'Follow your browser/device prompt…' })
+    try {
+      await api.registerPasskey(label || 'passkey')
+      setPkMsg({ ok: true, text: 'Passkey added.' })
+      loadPasskeys()
+    } catch (e) { setPkMsg({ ok: false, text: String((e as Error).message) }) }
+  }
+  async function removePasskey(id: string) {
+    if (!confirm('Remove this passkey?')) return
+    await guard(api.deletePasskey(id)); loadPasskeys()
+  }
 
   async function saveConfig() {
     const res = await guard(api.setConfig(cfg))
@@ -165,6 +188,34 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           <button style={{ flex: '0 0 auto' }} onClick={saveCreds}>Update</button>
         </div>
         {credMsg && <div className={`result ${credMsg.ok ? 'ok' : 'bad'}`}>{credMsg.text}</div>}
+      </div>
+
+      <div className="card">
+        <h2>Passkeys (fingerprint / Touch ID / Windows Hello)</h2>
+        <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
+          Add a passkey on each device you use (Mac, laptop, phone) to sign in with your fingerprint. Requires HTTPS.
+        </p>
+        <div className="scroll">
+          <table>
+            <thead><tr><th>Name</th><th>Added</th><th>Last used</th><th /></tr></thead>
+            <tbody>
+              {passkeys.length === 0
+                ? <tr><td colSpan={4} className="muted">No passkeys yet.</td></tr>
+                : passkeys.map((p) => (
+                  <tr key={p.credential_id}>
+                    <td>{p.label || 'passkey'}</td>
+                    <td className="muted">{fmtTime(p.created_at)}</td>
+                    <td className="muted">{p.last_used_at ? fmtTime(p.last_used_at) : 'never'}</td>
+                    <td><button className="ghost mini" onClick={() => removePasskey(p.credential_id)}>Remove</button></td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ marginTop: 12 }}>
+          <button onClick={addPasskey} disabled={!api.passkeySupported()}>Add a passkey</button>
+        </div>
+        {pkMsg && <div className={`result ${pkMsg.ok ? 'ok' : 'bad'}`}>{pkMsg.text}</div>}
       </div>
 
       <div className="card">

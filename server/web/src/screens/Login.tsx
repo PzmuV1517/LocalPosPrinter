@@ -14,6 +14,13 @@ export function Login({ onAuthed }: { onAuthed: (token: string) => void }) {
     } catch (e) { setErr(String((e as Error).message)) }
   }
 
+  async function passkey() {
+    setErr('')
+    try {
+      onAuthed(await api.loginWithPasskey())
+    } catch (e) { setErr(String((e as Error).message)) }
+  }
+
   return (
     <div className="gate-wrap">
       <div className="gate-cols">
@@ -28,6 +35,11 @@ export function Login({ onAuthed }: { onAuthed: (token: string) => void }) {
             <input id="wtPass" name="password" type="password" value={password}
               onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             <div style={{ marginTop: 14 }}><button type="submit" style={{ width: '100%' }}>Sign in</button></div>
+            {api.passkeySupported() && (
+              <div style={{ marginTop: 8 }}>
+                <button type="button" className="ghost" style={{ width: '100%' }} onClick={passkey}>Use fingerprint / passkey</button>
+              </div>
+            )}
             <div className="err">{err}</div>
           </form>
         </div>

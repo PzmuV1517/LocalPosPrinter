@@ -62,7 +62,9 @@ box = crypto.SecretBox(DATA_DIR)
 db = Database(DATA_DIR, box, lookup_key=box.derive("temp-password-lookup"))
 auth = Auth(db, session_key=box.derive("session"), skew_secs=HMAC_SKEW_SECS)
 from .notify import Notifier  # noqa: E402  (after db/box exist)
+from .passkeys import Passkeys  # noqa: E402
 notifier = Notifier(db, box)
+passkeys = Passkeys(db)
 
 # Bootstrap: a headless deploy can skip the wizard by providing BOTH a username and password in
 # the env. With only a password (or neither), the browser setup wizard runs on first visit.
@@ -88,6 +90,49 @@ else:  # dist not built/committed — the SPA won't load, but the API still runs
     log.warning("Web bundle missing at %s — run `npm --prefix web run build`.", _WEB_DIST)
 
 _NO_CACHE = {"Cache-Control": "no-store, max-age=0"}
+
+# Content-Security-Policy: everything self-hosted. 'unsafe-inline' for style only (React inline
+# styles); scripts are the bundled /assets file. Blocks framing, external connects, plugins.
+_CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; "
+        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'")
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    resp = await call_next(request)
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "DENY"
+    resp.headers["Referrer-Policy"] = "no-referrer"
+    resp.headers["Permissions-Policy"] = (
+        "publickey-credentials-get=(self), publickey-credentials-create=(self), "
+        "geolocation=(), microphone=(), camera=()")
+    resp.headers["Content-Security-Policy"] = _CSP
+    if request.headers.get("x-forwarded-proto") == "https":
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return resp
+
+
+# ---- simple in-memory per-IP rate limiter (brute-force protection on auth) ----
+_rl_hits: dict[str, list[float]] = {}
+
+
+def _rate_ok(key: str, ip: str, max_n: int, window: float) -> bool:
+    now = time.time()
+    k = f"{key}:{ip}"
+    hits = [t for t in _rl_hits.get(k, []) if now - t < window]
+    _rl_hits[k] = hits
+    if len(hits) >= max_n:
+        return False
+    hits.append(now)
+    return True
+
+
+def _rp_origin(request: Request) -> tuple[str, str]:
+    """(rp_id, origin) for WebAuthn — from env override or the (proxy-aware) request host."""
+    origin = os.environ.get("WEBAUTHN_ORIGIN") or _public_base_url(request)
+    rp_id = os.environ.get("WEBAUTHN_RP_ID") or origin.split("://", 1)[-1].split("/")[0].split(":")[0]
+    return rp_id, origin
 
 
 # ---------------------------------------------------------------------------
@@ -176,8 +221,18 @@ async def watchtower_alias() -> FileResponse:
     return FileResponse(os.path.join(_WEB_DIST, "index.html"), headers=_NO_CACHE)
 
 
-@app.get("/status")
-async def status() -> JSONResponse:
+@app.get("/healthz")
+async def healthz() -> JSONResponse:
+    # Unauthenticated liveness only — no data. Used to detect the server after a restart.
+    return JSONResponse({"ok": True})
+
+
+@app.post("/status")
+async def status(request: Request) -> JSONResponse:
+    # Authenticated: reveals device/queue state, so it requires a session/master password.
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
     return JSONResponse(
         {
             "device_connected": relay.is_connected(),
@@ -344,18 +399,98 @@ async def setup(request: Request) -> JSONResponse:
 # ---------------------------------------------------------------------------
 @app.post("/session/login")
 async def session_login(request: Request) -> JSONResponse:
+    ip = _client_ip(request)
+    if not _rate_ok("login", ip, max_n=10, window=300):
+        log.warning("Login rate-limited from %s", ip)
+        return JSONResponse({"ok": False, "error": "Too many attempts — try again later"}, status_code=429)
     _, body = await _read(request)
     token = auth.login((body.get("username") or "").strip(), (body.get("password") or "").strip())
     if not token:
-        log.warning("Failed dashboard login from %s", _client_ip(request))
+        log.warning("Failed dashboard login from %s", ip)
         return JSONResponse({"ok": False, "error": "Invalid username or password"}, status_code=401)
-    log.info("Dashboard login from %s", _client_ip(request))
+    log.info("Dashboard login from %s", ip)
     return JSONResponse({"ok": True, "token": token})
 
 
 @app.post("/session/verify")
 async def session_verify(request: Request) -> JSONResponse:
     return JSONResponse({"ok": _session_ok(request)})
+
+
+# ---------------------------------------------------------------------------
+# WebAuthn passkeys (fingerprint / Touch ID / Windows Hello)
+# ---------------------------------------------------------------------------
+@app.post("/webauthn/register/begin")
+async def webauthn_register_begin(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    rp_id, origin = _rp_origin(request)
+    username = db.get_config("master_username", "admin")
+    state, options = passkeys.register_begin(rp_id, origin, username)
+    return JSONResponse({"state": state, "options": json.loads(options)})
+
+
+@app.post("/webauthn/register/complete")
+async def webauthn_register_complete(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    try:
+        ok = passkeys.register_complete(body.get("state", ""), json.dumps(body.get("credential")),
+                                        body.get("label", ""))
+    except Exception as exc:
+        log.warning("Passkey registration failed: %s", exc)
+        return JSONResponse({"error": "Registration failed"}, status_code=400)
+    if not ok:
+        return JSONResponse({"error": "Registration expired — try again"}, status_code=400)
+    log.info("Passkey registered from %s", _client_ip(request))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/webauthn/login/begin")
+async def webauthn_login_begin(request: Request) -> JSONResponse:
+    if not _rate_ok("login", _client_ip(request), max_n=20, window=300):
+        return JSONResponse({"error": "Too many attempts"}, status_code=429)
+    rp_id, origin = _rp_origin(request)
+    res = passkeys.login_begin(rp_id, origin)
+    if not res:
+        return JSONResponse({"error": "No passkeys registered"}, status_code=404)
+    state, options = res
+    return JSONResponse({"state": state, "options": json.loads(options)})
+
+
+@app.post("/webauthn/login/complete")
+async def webauthn_login_complete(request: Request) -> JSONResponse:
+    ip = _client_ip(request)
+    if not _rate_ok("login", ip, max_n=20, window=300):
+        return JSONResponse({"ok": False, "error": "Too many attempts"}, status_code=429)
+    _, body = await _read(request)
+    try:
+        ok = passkeys.login_complete(body.get("state", ""), json.dumps(body.get("credential")))
+    except Exception as exc:
+        log.warning("Passkey login failed from %s: %s", ip, exc)
+        ok = False
+    if not ok:
+        return JSONResponse({"ok": False, "error": "Passkey authentication failed"}, status_code=401)
+    log.info("Passkey login from %s", ip)
+    return JSONResponse({"ok": True, "token": auth.mint_session("admin")})
+
+
+@app.post("/webauthn/list")
+async def webauthn_list(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return JSONResponse({"passkeys": db.list_credentials()})
+
+
+@app.post("/webauthn/delete")
+async def webauthn_delete(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return JSONResponse({"ok": db.delete_credential((body.get("credential_id") or "").strip())})
 
 
 # ---------------------------------------------------------------------------
@@ -522,8 +657,11 @@ async def config_update(request: Request) -> JSONResponse:
 # ---------------------------------------------------------------------------
 @app.post("/check")
 async def check(request: Request) -> JSONResponse:
+    # Operator-only (session/master): don't expose a public password-probing oracle.
     _, body = await _read(request)
-    provided = (body.get("password") or "").strip()
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    provided = (body.get("target") or "").strip()
     if auth.is_master(provided):
         return JSONResponse({"valid": True, "unlimited": True, "message": "No usage limit"})
     row = db.find_temp_password(provided)
@@ -536,7 +674,10 @@ async def check(request: Request) -> JSONResponse:
 
 @app.post("/preview")
 async def preview(request: Request) -> Response:
+    # Operator-only: the compose preview is part of the authenticated dashboard.
     _, payload = await _read(request)
+    if not _authed_admin(request, payload):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
         img = rendermod.render(payload, print_width())
     except rendermod.RenderError as exc:

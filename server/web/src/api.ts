@@ -61,11 +61,9 @@ export async function runSetup(payload: Record<string, unknown>): Promise<string
   return d.token
 }
 export async function serverUp(): Promise<boolean> {
-  try { return (await fetch('/status', { cache: 'no-store' })).ok } catch { return false }
+  try { return (await fetch('/healthz', { cache: 'no-store' })).ok } catch { return false }
 }
-export async function getStatus(): Promise<{ device_connected: boolean; pending_jobs: number }> {
-  return (await fetch('/status', { cache: 'no-store' })).json()
-}
+export const getStatus = () => post<{ device_connected: boolean; pending_jobs: number }>('/status', {})
 
 // ---- logs / devices ----
 export const getLogs = (filters: Record<string, unknown>) => post<LogsResponse>('/watchtower/logs', filters)
@@ -117,3 +115,79 @@ export async function preview(payload: unknown): Promise<{ ok: true; url: string
   return { ok: true, url: URL.createObjectURL(await r.blob()) }
 }
 export const printPayload = (payload: unknown) => postRaw('/print', payload)
+
+// ---- WebAuthn passkeys (fingerprint / Touch ID / Windows Hello) ----
+function b64urlToBuf(s: string): ArrayBuffer {
+  const pad = '='.repeat((4 - (s.length % 4)) % 4)
+  const bin = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'))
+  const u = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i)
+  return u.buffer
+}
+function bufToB64url(b: ArrayBuffer): string {
+  const u = new Uint8Array(b)
+  let s = ''
+  for (const x of u) s += String.fromCharCode(x)
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+function prepCreate(o: any) {
+  o.challenge = b64urlToBuf(o.challenge)
+  o.user.id = b64urlToBuf(o.user.id)
+  if (o.excludeCredentials) o.excludeCredentials = o.excludeCredentials.map((c: any) => ({ ...c, id: b64urlToBuf(c.id) }))
+  return o
+}
+function prepGet(o: any) {
+  o.challenge = b64urlToBuf(o.challenge)
+  if (o.allowCredentials) o.allowCredentials = o.allowCredentials.map((c: any) => ({ ...c, id: b64urlToBuf(c.id) }))
+  return o
+}
+
+export function passkeySupported(): boolean {
+  return typeof window !== 'undefined' && !!window.PublicKeyCredential
+}
+
+export async function registerPasskey(label: string): Promise<void> {
+  const begin = await post<{ state: string; options: any }>('/webauthn/register/begin', {})
+  const cred = (await navigator.credentials.create({ publicKey: prepCreate(begin.options) })) as PublicKeyCredential
+  const r = cred.response as AuthenticatorAttestationResponse
+  const credential = {
+    id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+    response: {
+      clientDataJSON: bufToB64url(r.clientDataJSON),
+      attestationObject: bufToB64url(r.attestationObject),
+      transports: typeof r.getTransports === 'function' ? r.getTransports() : [],
+    },
+    clientExtensionResults: {},
+  }
+  const res = await postRaw('/webauthn/register/complete', { state: begin.state, credential, label })
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Registration failed')
+}
+
+export async function loginWithPasskey(): Promise<string> {
+  const beginRes = await fetch('/webauthn/login/begin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+  const b = await beginRes.json()
+  if (!beginRes.ok) throw new Error(b.error || 'No passkeys registered')
+  const cred = (await navigator.credentials.get({ publicKey: prepGet(b.options) })) as PublicKeyCredential
+  const r = cred.response as AuthenticatorAssertionResponse
+  const credential = {
+    id: cred.id, rawId: bufToB64url(cred.rawId), type: cred.type,
+    response: {
+      clientDataJSON: bufToB64url(r.clientDataJSON),
+      authenticatorData: bufToB64url(r.authenticatorData),
+      signature: bufToB64url(r.signature),
+      userHandle: r.userHandle ? bufToB64url(r.userHandle) : null,
+    },
+    clientExtensionResults: {},
+  }
+  const res = await fetch('/webauthn/login/complete', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state: b.state, credential }),
+  })
+  const d = await res.json()
+  if (!res.ok || !d.token) throw new Error(d.error || 'Passkey login failed')
+  return d.token as string
+}
+
+export interface Passkey { credential_id: string; label: string; created_at: number; last_used_at: number | null }
+export const listPasskeys = () => post<{ passkeys: Passkey[] }>('/webauthn/list', {})
+export const deletePasskey = (credential_id: string) => post('/webauthn/delete', { credential_id })

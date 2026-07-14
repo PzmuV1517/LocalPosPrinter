@@ -54,6 +54,24 @@ Then open `https://<your-domain>/` — on first run you'll get a **setup wizard*
   plaintext `ws://` to a public host once a device secret is configured.
 - Everything security-relevant is written to the server's audit log (`data/server.log` + stdout):
   logins, auth failures, ingests, prints, device issuance/revocation.
+- **No data without auth.** Every endpoint that returns state is authenticated — including
+  `/status`, `/preview` and `/check` (operator session/master only). The one open endpoint is
+  `/healthz` (a bare liveness `{"ok":true}`, no data), plus the public client files `/scout.py`
+  and `/install-scout` (no secrets). Login endpoints are **rate-limited** per IP.
+- **Hardened responses** — a strict **Content-Security-Policy** (everything self-hosted, no
+  external scripts/connects), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`,
+  a locked-down `Permissions-Policy`, and HSTS when behind TLS.
+
+### Passkeys (fingerprint / Touch ID / Windows Hello)
+
+Sign in with your fingerprint instead of the password. In **Settings → Passkeys**, *Add a
+passkey* on each device you use — Mac (Touch ID), laptop (Windows Hello), phone (Chrome
+fingerprint). Then the login screen shows **Use fingerprint / passkey**. Any registered passkey
+logs you in as the master user; user-verification is required, so a biometric/PIN is always used.
+
+Passkeys are WebAuthn, bound to the domain — they need **HTTPS** (`watchtower.andreibanu.com`).
+The RP id/origin come from the request host (override with `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN`
+if your proxy headers differ). Credentials are stored as public keys only.
 
 ## Watchtower — the dashboard (served at `/`)
 

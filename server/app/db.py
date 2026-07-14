@@ -114,6 +114,16 @@ class Database:
                     key   TEXT PRIMARY KEY,
                     value TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS webauthn_credentials (
+                    credential_id TEXT PRIMARY KEY,   -- base64url
+                    public_key    TEXT NOT NULL,      -- base64url
+                    sign_count    INTEGER DEFAULT 0,
+                    label         TEXT DEFAULT '',
+                    transports    TEXT DEFAULT '',
+                    created_at    REAL NOT NULL,
+                    last_used_at  REAL
+                );
                 """
             )
             # Add columns that may be missing on databases created by older versions.
@@ -145,6 +155,50 @@ class Database:
         # Requires BOTH a username and a password hash, so a lone bootstrap password (or an old
         # password-only config) still triggers the browser setup wizard.
         return bool(self.get_config("master_username")) and bool(self.get_config("master_pw_hash"))
+
+    # ---- WebAuthn passkeys ----
+    def add_credential(self, credential_id: str, public_key: str, sign_count: int,
+                       label: str, transports: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO webauthn_credentials"
+                "(credential_id,public_key,sign_count,label,transports,created_at,last_used_at)"
+                " VALUES(?,?,?,?,?,?,?)",
+                (credential_id, public_key, sign_count, label, transports, time.time(), None),
+            )
+            self._conn.commit()
+
+    def get_credential(self, credential_id: str) -> Optional[dict]:
+        with self._lock:
+            r = self._conn.execute(
+                "SELECT * FROM webauthn_credentials WHERE credential_id=?", (credential_id,)).fetchone()
+        return dict(r) if r else None
+
+    def list_credentials(self) -> List[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT credential_id,label,created_at,last_used_at FROM webauthn_credentials ORDER BY created_at"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def all_credential_ids(self) -> List[str]:
+        with self._lock:
+            rows = self._conn.execute("SELECT credential_id FROM webauthn_credentials").fetchall()
+        return [r["credential_id"] for r in rows]
+
+    def update_credential_sign_count(self, credential_id: str, sign_count: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE webauthn_credentials SET sign_count=?, last_used_at=? WHERE credential_id=?",
+                (sign_count, time.time(), credential_id))
+            self._conn.commit()
+
+    def delete_credential(self, credential_id: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM webauthn_credentials WHERE credential_id=?", (credential_id,))
+            self._conn.commit()
+            return bool(cur.rowcount)
 
     def _migrate_json(self) -> None:
         """One-time import of the old JSON files, if the DB is empty and they exist."""

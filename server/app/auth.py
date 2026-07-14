@@ -83,6 +83,10 @@ class Auth:
             return None
         return self._mint_session("admin")
 
+    def mint_session(self, sub: str = "admin") -> str:
+        """Mint a session token directly (e.g. after a passkey login)."""
+        return self._mint_session(sub)
+
     def _mint_session(self, sub: str) -> str:
         payload = {"sub": sub, "exp": time.time() + self.session_ttl}
         raw = json.dumps(payload, separators=(",", ":")).encode()
