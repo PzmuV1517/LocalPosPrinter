@@ -73,18 +73,20 @@ kept in `localStorage`; the master password is never stored there). Tabs:
 
 ### Scout — the log-shipping client
 
-**Easiest install (no git clone)** — the server hosts the client and a one-line installer. In the
-**Devices** tab, *Issue device secret*, then on the device run the command shown there:
+**Easiest install (no git clone)** — the server hosts the client and a **guided** one-line
+installer. In the **Devices** tab, *Issue device secret*, then on the device run the command shown
+there and answer the prompts (paste the secret, then y/n):
 
 ```bash
 curl -fsSL "https://watchtower.andreibanu.com/install-scout?device_id=kitchen-pi" | bash
-scout set-secret sph_xxxxxxxx        # the secret shown once in the dashboard
-scout -s err --service test "hello watchtower"
 ```
 
-The installer downloads `scout.py` to `~/.local/share/scout`, writes `~/.config/scout/scout.env`
-(with the server URL + device id pre-filled), and drops a `scout` launcher in `~/.local/bin`. It's
-re-runnable and never overwrites a secret you've already set.
+It downloads `scout.py` to `~/.local/share/scout`, drops a `scout` launcher in `~/.local/bin`,
+writes `~/.config/scout/scout.env` (server URL + device id pre-filled), then interactively:
+prompts for the **device secret** (hidden), offers a **test log**, and offers to run the
+**agent as a systemd service** and **enable linger** — so you end up online with nothing left to
+do. It reads the real terminal even under `curl | bash`; if there's no TTY it prints the manual
+steps instead. Re-runnable and never overwrites a secret you've set.
 
 **Or use `scout.py` directly** (stdlib-only) — issue a secret in the dashboard, then:
 
