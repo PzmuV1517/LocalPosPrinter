@@ -50,8 +50,13 @@ def _load_or_create_key(data_dir: str) -> bytes:
 
     key = Fernet.generate_key()
     os.makedirs(data_dir, exist_ok=True)
-    # Write 0600 so the at-rest key isn't world-readable.
-    fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # O_EXCL so concurrent workers converge on the FIRST writer's key instead of each keeping
+    # its own in-memory key (which would make session tokens fail across workers). 0600.
+    try:
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        with open(key_path, "rb") as f:
+            return f.read().strip()
     with os.fdopen(fd, "wb") as f:
         f.write(key)
     return key

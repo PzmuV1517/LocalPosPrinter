@@ -68,6 +68,13 @@ notifier = Notifier(db, box)
 passkeys = Passkeys(db)
 mqtt_bridge = MqttBridge(db, DATA_DIR, log)
 
+# The session-signing key must be identical for every request that mints or verifies a token.
+# Log its fingerprint so a changing key (multiple workers/instances without a shared key, or a
+# non-persistent server.key) is visible — that would log users out on every reload.
+log.info("Session key fp=%s%s", box.derive("session")[:12],
+         "" if os.environ.get("SERVER_SECRET_KEY") else
+         "  (SERVER_SECRET_KEY unset — set it to keep sessions valid across restarts/workers)")
+
 # Bootstrap: a headless deploy can skip the wizard by providing BOTH a username and password in
 # the env. With only a password (or neither), the browser setup wizard runs on first visit.
 if not db.is_configured():
