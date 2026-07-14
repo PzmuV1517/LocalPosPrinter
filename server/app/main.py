@@ -215,6 +215,27 @@ def _valid_temp_password(pw) -> bool:
     return bool(row and not row["revoked"] and (row["max_uses"] - row["used"]) > 0)
 
 
+# Public (temp-password) prints are capped so nobody burns the paper roll.
+PUBLIC_MAX_CHARS = int(os.environ.get("PUBLIC_MAX_CHARS", "600"))
+
+
+def _content_len(payload: dict) -> int:
+    n = len(str(payload.get("title") or "")) + len(str(payload.get("text") or ""))
+    for it in payload.get("items") or []:
+        if isinstance(it, dict):
+            n += len(str(it.get("label") or "")) + len(str(it.get("value") or ""))
+    return n
+
+
+def _public_limit_error(payload: dict) -> "str | None":
+    """Reject oversized / image public prints (temp-password callers) to protect the paper roll."""
+    if payload.get("image") or payload.get("image_raw_bitmap"):
+        return "Images aren't allowed on public prints"
+    if _content_len(payload) > PUBLIC_MAX_CHARS:
+        return f"Too long for a public print (max {PUBLIC_MAX_CHARS} characters)"
+    return None
+
+
 def _usage_message(unlimited: bool, remaining) -> str:
     return "no usage limit" if unlimited else f"{remaining} usage{'s' if remaining != 1 else ''} left"
 
@@ -703,8 +724,13 @@ async def check(request: Request) -> JSONResponse:
 async def preview(request: Request) -> Response:
     # Operator (session/master) OR a valid temp password (the public print page).
     _, payload = await _read(request)
-    if not (_authed_admin(request, payload) or _valid_temp_password(payload.get("password"))):
+    admin = _authed_admin(request, payload)
+    if not (admin or _valid_temp_password(payload.get("password"))):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if not admin:
+        err = _public_limit_error(payload)
+        if err:
+            return JSONResponse({"error": err}, status_code=400)
     try:
         img = rendermod.render(payload, print_width())
     except rendermod.RenderError as exc:
@@ -789,6 +815,12 @@ async def _print_payload(payload: dict, authed_device=None, authed_session=False
         if not row or row["revoked"] or (row["max_uses"] - row["used"]) <= 0:
             return JSONResponse({"error": "Invalid password or no usages left"}, status_code=401)
         user, unlimited, temp_pw = row["user"], False, provided
+
+    # Temp-password (public) prints are size-capped and image-free to protect the paper roll.
+    if temp_pw:
+        err = _public_limit_error(payload)
+        if err:
+            return JSONResponse({"error": err}, status_code=400)
 
     try:
         img = rendermod.render(payload, print_width())

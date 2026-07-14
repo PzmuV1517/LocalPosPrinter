@@ -275,10 +275,19 @@ assert client.post("/preview", json={"format": "plain", "text": "hi"}).status_co
 assert client.post("/preview", json={"format": "plain", "text": "hi", "password": TEMP}).status_code == 200
 _ib = io.BytesIO(); Image.new("RGB", (300, 200), (210, 200, 190)).save(_ib, "PNG")
 _du = "data:image/png;base64," + base64.b64encode(_ib.getvalue()).decode()
-assert client.post("/preview", json={"format": "image", "image": _du, "password": TEMP,
+# image adjustments are an operator feature (images aren't allowed on public/temp prints)
+assert client.post("/preview", json={"format": "image", "image": _du,
        "image_contrast": 2.0, "image_dither": "threshold", "image_threshold": 150,
-       "image_sharpen": True, "image_autocontrast": True}).status_code == 200
-print("  ok  /public-print + temp-password preview + image adjustments")
+       "image_sharpen": True, "image_autocontrast": True}, headers=AUTH).status_code == 200
+print("  ok  /public-print + temp-password preview + image adjustments (operator)")
+
+# ---- public prints are size-capped and image-free (protect the paper roll) ----
+assert client.post("/print", json={"format": "plain", "text": "x" * 700, "password": TEMP}).status_code == 400
+assert client.post("/print", json={"format": "image", "image": _du, "password": TEMP}).status_code == 400
+assert client.post("/preview", json={"format": "plain", "text": "x" * 700, "password": TEMP}).status_code == 400
+# master/session is not capped
+assert client.post("/print", json={"format": "plain", "text": "x" * 700}, headers=AUTH).status_code == 200
+print("  ok  public print length cap + no images (master uncapped)")
 
 # ---- security: healthz open, status/webauthn gated ----
 assert client.get("/healthz").json()["ok"] is True
