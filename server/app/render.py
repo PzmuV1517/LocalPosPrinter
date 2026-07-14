@@ -34,16 +34,16 @@ MIN_TEXT_SIZE = 10
 MAX_TEXT_SIZE = 120
 
 # MUIE (Minimal Unified Incident Envelope) alert layout.
-ALERT_SIZE = 46            # the big "ALERT" header
-ALERT_TYPE_SIZE = 24       # the severity type line
-ALERT_TEXT_SIZE = 32       # size of the alert message body (most important for legibility)
-ALERT_DASH_SIZE = 15       # size of the "- - -" dash rule
-ALERT_STAR_SIZE = 15       # size of the "* * *" star rule
-ALERT_FOOTER_SIZE = 22
-ALERT_THANKS_SIZE = 18     # "Thank you for using M.U.I.E."
-ALERT_EXPANSION_SIZE = 15  # "(Minimal Unified Incident Envelope)"
-ALERT_HEADER_SPACING = 4   # vertical padding around header lines (ALERT / type)
-ALERT_FOOTER_SPACING = 4   # vertical padding around footer lines (service/time, thanks, expansion)
+ALERT_SIZE = 62            # the big "ALERT" header
+ALERT_TYPE_SIZE = 34       # the severity type line
+ALERT_TEXT_SIZE = 44       # size of the alert message body (most important for legibility)
+ALERT_DASH_SIZE = 20       # size of the "- - -" dash rule
+ALERT_STAR_SIZE = 20       # size of the "* * *" star rule
+ALERT_FOOTER_SIZE = 30
+ALERT_THANKS_SIZE = 24     # "Thank you for using M.U.I.E."
+ALERT_EXPANSION_SIZE = 20  # "(Minimal Unified Incident Envelope)"
+ALERT_HEADER_SPACING = 6   # vertical padding around header lines (ALERT / type)
+ALERT_FOOTER_SPACING = 6   # vertical padding around footer lines (service/time, thanks, expansion)
 # Font per alert line, chosen by number (see _ALERT_FONT_FILES): 1=Jersey10 (default),
 # 2=built-in mono, 3=Jacquard12, 4=Doto. Missing font files fall back to the mono font.
 ALERT_FONT = 1
