@@ -57,7 +57,7 @@ export async function verifySession(): Promise<boolean> {
   const t = getToken()
   if (!t) return false
   try {
-    const r = await fetch('/session/verify', { headers: { Authorization: `Bearer ${t}` } })
+    const r = await fetch('/session/verify', { method: 'POST', headers: { Authorization: `Bearer ${t}` } })
     const d = await r.json()
     return !!d.ok
   } catch { return false }
