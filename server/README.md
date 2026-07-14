@@ -263,6 +263,19 @@ process re-execs itself in place (works under any supervisor, and standalone in 
   see usage, and revoke. These are for handing to LAN services; a use is consumed only when the
   print actually reaches the device. The **Print** tab's `/check` reports remaining uses without
   consuming one.
+
+### Public print page (`/public-print`)
+
+A minimal page **anyone can open** (no login) that only prints with a **temporary password** you
+issued in the Passwords tab. Enter the password, compose (plain/centered/boxed/header/banner/alert),
+preview, and print — each print consumes one use. Hand out a `max_uses`-capped password instead of
+dashboard access. Preview works with the temp password (non-consuming); everything else stays gated.
+
+### Image printing
+
+The **Print** tab downscales a picked image in the browser and offers adjustments so faint photos
+print with detail: **brightness**, **contrast**, **auto-contrast**, **sharpen**, **invert**, and a
+**dither vs threshold** mode (threshold is best for logos/line-art). The live preview reflects them.
 - Printing with a temporary password consumes one use and the response reports the
   remaining count; once exhausted the password is rejected.
 

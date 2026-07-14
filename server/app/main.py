@@ -206,6 +206,15 @@ def _authed_admin(request: Request, body: dict) -> bool:
     return _session_ok(request) or auth.is_master((body.get("password") or "").strip())
 
 
+def _valid_temp_password(pw) -> bool:
+    """A non-revoked temp password with uses left (non-consuming) — for the public print page."""
+    pw = (pw or "").strip()
+    if not pw:
+        return False
+    row = db.find_temp_password(pw)
+    return bool(row and not row["revoked"] and (row["max_uses"] - row["used"]) > 0)
+
+
 def _usage_message(unlimited: bool, remaining) -> str:
     return "no usage limit" if unlimited else f"{remaining} usage{'s' if remaining != 1 else ''} left"
 
@@ -221,6 +230,18 @@ async def index() -> FileResponse:
 @app.get("/watchtower")
 async def watchtower_alias() -> FileResponse:
     return FileResponse(os.path.join(_WEB_DIST, "index.html"), headers=_NO_CACHE)
+
+
+@app.get("/public-print")
+async def public_print_page() -> FileResponse:
+    # Public page — anyone can open it, but printing only works with a valid temp password.
+    return FileResponse(os.path.join(_WEB_DIST, "public-print.html"), headers=_NO_CACHE)
+
+
+@app.get("/public-print.js")
+async def public_print_js() -> FileResponse:
+    return FileResponse(os.path.join(_WEB_DIST, "public-print.js"), media_type="text/javascript",
+                        headers=_NO_CACHE)
 
 
 @app.get("/healthz")
@@ -680,9 +701,9 @@ async def check(request: Request) -> JSONResponse:
 
 @app.post("/preview")
 async def preview(request: Request) -> Response:
-    # Operator-only: the compose preview is part of the authenticated dashboard.
+    # Operator (session/master) OR a valid temp password (the public print page).
     _, payload = await _read(request)
-    if not _authed_admin(request, payload):
+    if not (_authed_admin(request, payload) or _valid_temp_password(payload.get("password"))):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
     try:
         img = rendermod.render(payload, print_width())

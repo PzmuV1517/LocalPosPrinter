@@ -267,6 +267,19 @@ assert client.post("/check", json={"target": TEMP}).status_code == 401  # now au
 assert client.post("/check", json={"target": TEMP}, headers=AUTH).json()["remaining"] == 2
 print("  ok  temp password created + /check (auth-gated) reports remaining")
 
+# ---- public print page + temp-password preview + image adjustments ----
+assert client.get("/public-print").status_code == 200
+assert client.get("/public-print.js").status_code == 200
+# preview works with a valid temp password (non-consuming), refused without
+assert client.post("/preview", json={"format": "plain", "text": "hi"}).status_code == 401
+assert client.post("/preview", json={"format": "plain", "text": "hi", "password": TEMP}).status_code == 200
+_ib = io.BytesIO(); Image.new("RGB", (300, 200), (210, 200, 190)).save(_ib, "PNG")
+_du = "data:image/png;base64," + base64.b64encode(_ib.getvalue()).decode()
+assert client.post("/preview", json={"format": "image", "image": _du, "password": TEMP,
+       "image_contrast": 2.0, "image_dither": "threshold", "image_threshold": 150,
+       "image_sharpen": True, "image_autocontrast": True}).status_code == 200
+print("  ok  /public-print + temp-password preview + image adjustments")
+
 # ---- security: healthz open, status/webauthn gated ----
 assert client.get("/healthz").json()["ok"] is True
 assert client.post("/status", json={}).status_code == 401

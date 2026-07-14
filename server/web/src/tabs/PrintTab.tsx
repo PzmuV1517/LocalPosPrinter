@@ -37,6 +37,7 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
   const [items, setItems] = useState<{ label: string; value: string }[]>([{ label: 'Milk', value: 'x2' }, { label: 'Eggs', value: 'x12' }])
   const [imageB64, setImageB64] = useState<string | null>(null)
   const [imagePos, setImagePos] = useState('top')
+  const [imgAdj, setImgAdj] = useState({ brightness: 1, contrast: 1, dither: 'fs', threshold: 128, invert: false, sharpen: false, auto: false })
   const [preview, setPreview] = useState('')
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
   const textRef = useRef<HTMLTextAreaElement>(null)
@@ -52,9 +53,19 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
     if (vis.border_style) p.border_style = borderStyle
     if (vis.items) p.items = items.filter((it) => it.label || it.value)
     if (vis.alert_type) { p.alert_type = alertType; p.service = service; p.sent_at = Math.floor(Date.now() / 1000) }
-    if (vis.image && imageB64) { p.image = imageB64; p.image_position = imagePos }
+    if (vis.image && imageB64) {
+      p.image = imageB64
+      p.image_position = imagePos
+      p.image_brightness = imgAdj.brightness
+      p.image_contrast = imgAdj.contrast
+      p.image_dither = imgAdj.dither
+      p.image_threshold = imgAdj.threshold
+      p.image_invert = imgAdj.invert
+      p.image_sharpen = imgAdj.sharpen
+      p.image_autocontrast = imgAdj.auto
+    }
     return p
-  }, [format, printMode, font, title, text, textSize, barcodeType, borderStyle, items, alertType, service, imageB64, imagePos, vis])
+  }, [format, printMode, font, title, text, textSize, barcodeType, borderStyle, items, alertType, service, imageB64, imagePos, imgAdj, vis])
 
   // Debounced live preview.
   useEffect(() => {
@@ -154,6 +165,37 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
             <input type="file" accept="image/*" onChange={onImage} />
             <label>Image position</label>
             <select value={imagePos} onChange={(e) => setImagePos(e.target.value)}><option value="top">Top</option><option value="bottom">Bottom</option></select>
+            {imageB64 && <>
+              <label style={{ marginTop: 12 }}>Image adjustments (fix faint prints)</label>
+              <div className="row">
+                <div><label>Brightness {imgAdj.brightness.toFixed(2)}</label>
+                  <input type="range" min={0.3} max={2} step={0.05} value={imgAdj.brightness}
+                    onChange={(e) => setImgAdj({ ...imgAdj, brightness: +e.target.value })} /></div>
+                <div><label>Contrast {imgAdj.contrast.toFixed(2)}</label>
+                  <input type="range" min={0.3} max={3} step={0.05} value={imgAdj.contrast}
+                    onChange={(e) => setImgAdj({ ...imgAdj, contrast: +e.target.value })} /></div>
+              </div>
+              <div className="row" style={{ alignItems: 'flex-end' }}>
+                <div><label>Mode</label>
+                  <select value={imgAdj.dither} onChange={(e) => setImgAdj({ ...imgAdj, dither: e.target.value })}>
+                    <option value="fs">Dither (photos)</option>
+                    <option value="threshold">Threshold (logos/line art)</option>
+                  </select></div>
+                {imgAdj.dither === 'threshold' &&
+                  <div><label>Threshold {imgAdj.threshold}</label>
+                    <input type="range" min={16} max={240} step={4} value={imgAdj.threshold}
+                      onChange={(e) => setImgAdj({ ...imgAdj, threshold: +e.target.value })} /></div>}
+              </div>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 8 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, textTransform: 'none' }}>
+                  <input type="checkbox" checked={imgAdj.auto} onChange={(e) => setImgAdj({ ...imgAdj, auto: e.target.checked })} style={{ width: 'auto' }} /> auto-contrast</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, textTransform: 'none' }}>
+                  <input type="checkbox" checked={imgAdj.sharpen} onChange={(e) => setImgAdj({ ...imgAdj, sharpen: e.target.checked })} style={{ width: 'auto' }} /> sharpen</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: 0, textTransform: 'none' }}>
+                  <input type="checkbox" checked={imgAdj.invert} onChange={(e) => setImgAdj({ ...imgAdj, invert: e.target.checked })} style={{ width: 'auto' }} /> invert</label>
+                <button className="ghost mini" onClick={() => setImgAdj({ brightness: 1, contrast: 1, dither: 'fs', threshold: 128, invert: false, sharpen: false, auto: false })}>reset</button>
+              </div>
+            </>}
           </>}
 
           <div className="row" style={{ marginTop: 16 }}>

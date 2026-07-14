@@ -20,7 +20,7 @@ import re
 import time
 from typing import List, Optional
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
 # ---- layout constants (kept aligned with the Android renderer) ----
 DEFAULT_WIDTH = int(os.environ.get("PRINT_WIDTH", "384"))
@@ -411,9 +411,46 @@ def _image_field(payload: dict, w: int) -> Optional[Image.Image]:
             img = Image.open(io.BytesIO(_decode_b64(std))).convert("L")
         except Exception as exc:
             raise RenderError(f"Could not decode image (use PNG/JPEG): {exc}") from exc
+        img = _adjust_image(img, payload)
         img = _scale_to_width(img, w)
-        return img.convert("1")          # Floyd–Steinberg (Pillow default dither)
+        return _to_1bit(img, payload)
     return None
+
+
+def _fnum(payload: dict, key: str, default: float) -> float:
+    try:
+        return float(payload.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _adjust_image(img: Image.Image, payload: dict) -> Image.Image:
+    """Grayscale tweaks so faint photos print with visible detail. img is mode 'L'."""
+    if payload.get("image_autocontrast"):
+        img = ImageOps.autocontrast(img, cutoff=1)
+    b = _fnum(payload, "image_brightness", 1.0)
+    if b != 1.0:
+        img = ImageEnhance.Brightness(img).enhance(b)
+    c = _fnum(payload, "image_contrast", 1.0)
+    if c != 1.0:
+        img = ImageEnhance.Contrast(img).enhance(c)
+    if payload.get("image_sharpen"):
+        img = img.filter(ImageFilter.UnsharpMask(radius=2, percent=160, threshold=2))
+    if payload.get("image_invert"):
+        img = ImageOps.invert(img)
+    return img
+
+
+def _to_1bit(img: Image.Image, payload: dict) -> Image.Image:
+    """Convert 'L' -> 1-bit. 'threshold' = hard cutoff (logos/line art), else Floyd–Steinberg."""
+    mode = (payload.get("image_dither") or "fs").lower()
+    if mode in ("threshold", "none"):
+        try:
+            t = int(payload.get("image_threshold", 128))
+        except (TypeError, ValueError):
+            t = 128
+        return img.point(lambda p: 255 if p >= t else 0).convert("1")
+    return img.convert("1")  # Floyd–Steinberg (Pillow default dither) — best for photos
 
 
 # ---------------------------------------------------------------------------
