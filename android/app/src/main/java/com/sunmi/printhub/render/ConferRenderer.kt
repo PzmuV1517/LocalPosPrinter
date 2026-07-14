@@ -100,6 +100,21 @@ object ConferRenderer {
         return stack(listOf(rule, head, name, rule2), w)
     }
 
+    /** Terminal-style "boot sequence" printed when entering Confer mode. [lines] are diagnostics. */
+    fun conferStartup(lines: List<String>, w: Int): Bitmap {
+        val inner = (w - 2 * PAD).toInt().coerceAtLeast(1)
+        val parts = ArrayList<Bitmap>()
+        parts.add(block(layout(slashRule(inner), textPaint(20f, true), inner, Layout.Alignment.ALIGN_CENTER), w, 14f, 0f))
+        parts.add(block(layout("C O N F E R", textPaint(38f, true), inner, Layout.Alignment.ALIGN_CENTER), w, 2f, 0f))
+        parts.add(block(layout("secure transcript link", textPaint(20f, false), inner, Layout.Alignment.ALIGN_CENTER), w, 0f, 2f))
+        parts.add(block(layout(slashRule(inner), textPaint(20f, true), inner, Layout.Alignment.ALIGN_CENTER), w, 0f, 6f))
+        for (l in lines) {
+            parts.add(block(layout(l, textPaint(24f, false), inner, Layout.Alignment.ALIGN_NORMAL), w, 0f, 2f))
+        }
+        parts.add(block(layout(slashRule(inner), textPaint(20f, true), inner, Layout.Alignment.ALIGN_CENTER), w, 6f, 6f))
+        return stack(parts, w)
+    }
+
     private fun slashRule(innerPx: Int): String {
         val paint = textPaint(20f, true)
         val cw = paint.measureText("/").coerceAtLeast(1f)

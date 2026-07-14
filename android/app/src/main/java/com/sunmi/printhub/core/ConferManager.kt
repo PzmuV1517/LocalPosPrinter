@@ -126,9 +126,40 @@ object ConferManager {
             if (!loggedIn) { main.post { listener?.onError("Log in to Confer first") }; return }
             announcePrintMode(false)   // tell the print server we're chatting now
             openSocket()
+            printStartup()             // cool boot-sequence diagnostics
+            // Head the transcript for whatever chat is already selected, so you don't have to
+            // switch away and back after enabling Confer mode to see the "TRANSCRIPT START".
+            if (activeChatId != 0) printTranscriptStart(activeChatId)
         } else {
             announcePrintMode(true)    // back to Print mode → resume print jobs
             closeSocket()
+        }
+    }
+
+    private fun printStartup() {
+        io.execute {
+            try {
+                val s = settings()
+                val lines = listOf(
+                    "> initializing secure channel",
+                    "> user   : ${displayName.ifBlank { username }} (@$username)",
+                    "> device : ${s.deviceId}",
+                    "> server : ${s.conferServerEffective}",
+                    "> crypto : TLS + at-rest",
+                    "> status : LINK UP",
+                    "> awaiting transcripts_",
+                )
+                Hub.printer.printBitmap(ConferRenderer.conferStartup(lines, s.printWidthPx), false, 4)
+            } catch (t: Throwable) { Log.e(TAG, "startup banner failed", t) }
+        }
+    }
+
+    private fun printTranscriptStart(chatId: Int) {
+        io.execute {
+            try {
+                Hub.printer.printBitmap(
+                    ConferRenderer.transcriptStart("# " + chatName(chatId), settings().printWidthPx), false, 4)
+            } catch (t: Throwable) { Log.e(TAG, "transcript banner failed", t) }
         }
     }
 
@@ -298,14 +329,7 @@ object ConferManager {
         activeChatId = chatId
         // Head the paper transcript with a terminal-style banner when you switch into a chat
         // (only while actually in Confer mode, so browsing in Print mode doesn't waste paper).
-        if (changed && conferModeOn) {
-            io.execute {
-                try {
-                    Hub.printer.printBitmap(
-                        ConferRenderer.transcriptStart("# " + chatName(chatId), settings().printWidthPx), false, 1)
-                } catch (t: Throwable) { Log.e(TAG, "transcript banner failed", t) }
-            }
-        }
+        if (changed && conferModeOn) printTranscriptStart(chatId)
         io.execute {
             try {
                 val arr = api!!.history(chatId)
