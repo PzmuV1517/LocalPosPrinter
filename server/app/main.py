@@ -60,20 +60,13 @@ _WEB_DIST = os.path.join(_SERVER_DIR, "web", "dist")
 log = setup_logging(DATA_DIR, os.environ.get("LOG_LEVEL", "INFO"))
 box = crypto.SecretBox(DATA_DIR)
 db = Database(DATA_DIR, box, lookup_key=box.derive("temp-password-lookup"))
-auth = Auth(db, session_key=box.derive("session"), skew_secs=HMAC_SKEW_SECS)
+auth = Auth(db, skew_secs=HMAC_SKEW_SECS)
 from .notify import Notifier  # noqa: E402  (after db/box exist)
 from .passkeys import Passkeys  # noqa: E402
 from .mqtt_bridge import MqttBridge  # noqa: E402
 notifier = Notifier(db, box)
 passkeys = Passkeys(db)
 mqtt_bridge = MqttBridge(db, DATA_DIR, log)
-
-# The session-signing key must be identical for every request that mints or verifies a token.
-# Log its fingerprint so a changing key (multiple workers/instances without a shared key, or a
-# non-persistent server.key) is visible — that would log users out on every reload.
-log.info("Session key fp=%s%s", box.derive("session")[:12],
-         "" if os.environ.get("SERVER_SECRET_KEY") else
-         "  (SERVER_SECRET_KEY unset — set it to keep sessions valid across restarts/workers)")
 
 # Bootstrap: a headless deploy can skip the wizard by providing BOTH a username and password in
 # the env. With only a password (or neither), the browser setup wizard runs on first visit.
@@ -466,6 +459,12 @@ async def session_login(request: Request) -> JSONResponse:
 @app.post("/session/verify")
 async def session_verify(request: Request) -> JSONResponse:
     return JSONResponse({"ok": _session_ok(request)})
+
+
+@app.post("/session/logout")
+async def session_logout(request: Request) -> JSONResponse:
+    auth.logout(auth.bearer(request.headers.get("authorization")))
+    return JSONResponse({"ok": True})
 
 
 # ---------------------------------------------------------------------------
@@ -1283,6 +1282,7 @@ async def _startup() -> None:
     removed = db.prune_logs(retention_days(), err_retention_days())
     if removed:
         log.info("Pruned %d logs older than %d days", removed, retention_days())
+    db.prune_sessions()
 
     async def _pruner() -> None:
         while True:

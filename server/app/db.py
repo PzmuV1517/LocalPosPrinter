@@ -115,6 +115,14 @@ class Database:
                     value TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS sessions (
+                    token      TEXT PRIMARY KEY,
+                    sub        TEXT DEFAULT 'admin',
+                    created_at REAL NOT NULL,
+                    expires_at REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_sessions_exp ON sessions(expires_at);
+
                 CREATE TABLE IF NOT EXISTS webauthn_credentials (
                     credential_id TEXT PRIMARY KEY,   -- base64url
                     public_key    TEXT NOT NULL,      -- base64url
@@ -155,6 +163,31 @@ class Database:
         # Requires BOTH a username and a password hash, so a lone bootstrap password (or an old
         # password-only config) still triggers the browser setup wizard.
         return bool(self.get_config("master_username")) and bool(self.get_config("master_pw_hash"))
+
+    # ---- sessions (server-side, so login survives restarts + works across workers) ----
+    def create_session(self, token: str, sub: str, expires_at: float) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO sessions(token, sub, created_at, expires_at) VALUES(?,?,?,?)",
+                (token, sub, time.time(), expires_at))
+            self._conn.commit()
+
+    def session_valid(self, token: str) -> bool:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT expires_at FROM sessions WHERE token=?", (token,)).fetchone()
+        return bool(row and row["expires_at"] > time.time())
+
+    def delete_session(self, token: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM sessions WHERE token=?", (token,))
+            self._conn.commit()
+
+    def prune_sessions(self) -> int:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM sessions WHERE expires_at < ?", (time.time(),))
+            self._conn.commit()
+            return cur.rowcount
 
     # ---- WebAuthn passkeys ----
     def add_credential(self, credential_id: str, public_key: str, sign_count: int,

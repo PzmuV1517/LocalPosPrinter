@@ -16,9 +16,8 @@ Two independent mechanisms:
 
 from __future__ import annotations
 
-import base64
 import hmac
-import json
+import secrets
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -38,12 +37,10 @@ class Auth:
     def __init__(
         self,
         db: Database,
-        session_key: str,
         skew_secs: int = 300,
         session_ttl_secs: int = 12 * 3600,
     ):
         self.db = db
-        self._session_key = session_key.encode()
         self.skew = skew_secs
         self.session_ttl = session_ttl_secs
 
@@ -78,6 +75,8 @@ class Auth:
         self.db.set_config("master_pw_hash", crypto.hash_password(password))
 
     # ---- session tokens (browser) ----
+    # Stored server-side in the DB (which every worker/restart shares), so login survives
+    # restarts and works across workers/instances without depending on any signing key.
     def login(self, username: Optional[str], password: Optional[str]) -> Optional[str]:
         if not self.check_login(username, password):
             return None
@@ -88,25 +87,16 @@ class Auth:
         return self._mint_session(sub)
 
     def _mint_session(self, sub: str) -> str:
-        payload = {"sub": sub, "exp": time.time() + self.session_ttl}
-        raw = json.dumps(payload, separators=(",", ":")).encode()
-        body = base64.urlsafe_b64encode(raw).decode().rstrip("=")
-        sig = hmac.new(self._session_key, body.encode(), "sha256").hexdigest()
-        return f"{body}.{sig}"
+        token = secrets.token_urlsafe(32)
+        self.db.create_session(token, sub, time.time() + self.session_ttl)
+        return token
 
     def verify_session(self, token: Optional[str]) -> bool:
-        if not token or "." not in token:
-            return False
-        body, _, sig = token.partition(".")
-        expected = hmac.new(self._session_key, body.encode(), "sha256").hexdigest()
-        if not hmac.compare_digest(expected, sig):
-            return False
-        try:
-            pad = "=" * (-len(body) % 4)
-            payload = json.loads(base64.urlsafe_b64decode(body + pad))
-        except (ValueError, TypeError):
-            return False
-        return float(payload.get("exp", 0)) > time.time()
+        return bool(token) and self.db.session_valid(token)
+
+    def logout(self, token: Optional[str]) -> None:
+        if token:
+            self.db.delete_session(token)
 
     @staticmethod
     def bearer(header: Optional[str]) -> Optional[str]:

@@ -20,7 +20,12 @@ export const getToken = (): string | null => {
   return t
 }
 export const setToken = (t: string) => { localStorage.setItem(TOKEN_KEY, t); bridge()?.saveToken?.(t) }
-export const clearToken = () => { localStorage.removeItem(TOKEN_KEY); bridge()?.saveToken?.('') }
+export const clearToken = () => {
+  const t = localStorage.getItem(TOKEN_KEY)
+  if (t) fetch('/session/logout', { method: 'POST', headers: { Authorization: `Bearer ${t}` } }).catch(() => {})
+  localStorage.removeItem(TOKEN_KEY)
+  bridge()?.saveToken?.('')
+}
 
 /** Thrown on a 401 so the app can drop back to the login gate. */
 export class Unauthorized extends Error {}
