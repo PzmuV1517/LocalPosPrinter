@@ -12,6 +12,8 @@ import android.webkit.WebViewClient
 import android.widget.EditText
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.watchtower.mobile.databinding.ActivityMainBinding
 
 /**
@@ -46,9 +48,21 @@ class MainActivity : AppCompatActivity() {
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true)
         wv.addJavascriptInterface(Bridge(), "Android")
+
+        // Session persistence: the native token is the source of truth. Before the web app's
+        // scripts run, seed localStorage from it — so login survives even if the WebView drops
+        // its own localStorage between launches.
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(
+                wv,
+                "(function(){try{var t=(window.Android&&Android.getToken)?Android.getToken():'';" +
+                    "if(t&&!localStorage.getItem('wt_token'))localStorage.setItem('wt_token',t);}catch(e){}})();",
+                setOf("*"),
+            )
+        }
         wv.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) {
-                // Keep the native token in sync with the web session (used by share-to-print).
+                // Mirror the web session token back to native (used on next launch + share-print).
                 view.evaluateJavascript(
                     "(function(){try{if(!window.__wtSync){window.__wtSync=setInterval(function(){" +
                         "var t=localStorage.getItem('wt_token')||'';" +
@@ -57,7 +71,7 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
-        if (savedInstanceState == null) wv.loadUrl(store.serverUrl)
+        wv.loadUrl(store.serverUrl)
         AppUpdater.check(this, silent = true)
     }
 
@@ -99,5 +113,8 @@ class MainActivity : AppCompatActivity() {
         fun saveToken(t: String?) {
             store.token = t ?: ""
         }
+
+        @JavascriptInterface
+        fun getToken(): String = store.token
     }
 }
