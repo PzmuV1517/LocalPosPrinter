@@ -67,6 +67,12 @@ from .mqtt_bridge import MqttBridge  # noqa: E402
 notifier = Notifier(db, box)
 passkeys = Passkeys(db)
 mqtt_bridge = MqttBridge(db, DATA_DIR, log)
+from .confer import ConferHub, ConferSessions, ConferConn  # noqa: E402
+confer_hub = ConferHub(db)
+confer_sessions = ConferSessions(db, auth)
+
+# Longest message Confer will accept (chars). Images are exempt (sent as base64).
+CONFER_MAX_CHARS = int(os.environ.get("CONFER_MAX_CHARS", "888"))
 
 # Bootstrap: a headless deploy can skip the wizard by providing BOTH a username and password in
 # the env. With only a password (or neither), the browser setup wizard runs on first visit.
@@ -201,6 +207,13 @@ def _session_ok(request: Request) -> bool:
     return auth.verify_session(auth.bearer(request.headers.get("authorization")))
 
 
+def _confer_user(request: Request):
+    """Resolve a Confer bearer token to a user row, or None. Confer accounts are separate from
+    the master/admin session — a Confer token can't touch the dashboard, and vice versa."""
+    uid = confer_sessions.resolve(auth.bearer(request.headers.get("authorization")))
+    return db.confer_get_user(uid) if uid else None
+
+
 def _authed_admin(request: Request, body: dict) -> bool:
     """Operator auth for dashboard endpoints: valid session token OR the master password."""
     return _session_ok(request) or auth.is_master((body.get("password") or "").strip())
@@ -282,6 +295,9 @@ async def status(request: Request) -> JSONResponse:
             "device_connected": relay.is_connected(),
             "pending_jobs": sum(len(q) for q in relay.pending.values()),
             "print_width": print_width(),
+            # A printer that switched to chat isn't offline — surface it as "in Confer mode".
+            "confer_mode": confer_hub.printer_in_confer_mode(),
+            "confer_presence": confer_hub.presence(),
         }
     )
 
@@ -465,6 +481,210 @@ async def session_verify(request: Request) -> JSONResponse:
 async def session_logout(request: Request) -> JSONResponse:
     auth.logout(auth.bearer(request.headers.get("authorization")))
     return JSONResponse({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# Confer — private printer chat (see confer.py)
+# ---------------------------------------------------------------------------
+async def _confer_store_and_fanout(chat_id: int, sender: str, display: str,
+                                   kind: str, text, image) -> "JSONResponse":
+    """Validate + persist + broadcast one message. Shared by participant and admin senders."""
+    if not db.confer_chat_exists(int(chat_id) if str(chat_id).isdigit() else -1):
+        return JSONResponse({"error": "No such chat"}, status_code=404)
+    kind = "image" if kind == "image" else "text"
+    if kind == "image":
+        body = (image or "").strip()
+        if not body:
+            return JSONResponse({"error": "Missing image"}, status_code=400)
+    else:
+        body = (text or "")
+        if not body.strip():
+            return JSONResponse({"error": "Empty message"}, status_code=400)
+        if len(body) > CONFER_MAX_CHARS:
+            return JSONResponse({"error": f"Message too long (max {CONFER_MAX_CHARS} characters)"},
+                                status_code=400)
+    stored = await confer_hub.post_message(int(chat_id), sender, display, kind, body)
+    if not stored:
+        return JSONResponse({"error": "No such chat"}, status_code=404)
+    # Don't echo the (possibly large) image body back in the ack.
+    ack = {k: v for k, v in stored.items() if k != "body"}
+    return JSONResponse({"ok": True, "message": ack})
+
+
+# ---- participant endpoints (Confer account token) ----
+@app.post("/confer/login")
+async def confer_login(request: Request) -> JSONResponse:
+    ip = _client_ip(request)
+    if not _rate_ok("confer_login", ip, max_n=10, window=300):
+        return JSONResponse({"error": "Too many attempts — try again later"}, status_code=429)
+    _, body = await _read(request)
+    res = confer_sessions.login((body.get("username") or "").strip(), (body.get("password") or "").strip())
+    if not res:
+        return JSONResponse({"error": "Invalid username or password"}, status_code=401)
+    return JSONResponse({"ok": True, "token": res["token"], "user": res["user"]})
+
+
+@app.post("/confer/tree")
+async def confer_tree(request: Request) -> JSONResponse:
+    if not _confer_user(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return JSONResponse(db.confer_tree())
+
+
+@app.post("/confer/history")
+async def confer_history(request: Request) -> JSONResponse:
+    if not _confer_user(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    _, body = await _read(request)
+    chat_id = int(body.get("chat_id") or 0)
+    after = body.get("after_id")
+    msgs = db.confer_list_messages(chat_id, after_id=int(after) if after else None)
+    return JSONResponse({"messages": msgs})
+
+
+@app.post("/confer/send")
+async def confer_send(request: Request) -> JSONResponse:
+    user = _confer_user(request)
+    if not user:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    _, body = await _read(request)
+    return await _confer_store_and_fanout(
+        body.get("chat_id"), user["username"], user["display_name"],
+        body.get("kind"), body.get("text"), body.get("image"))
+
+
+@app.post("/confer/subscriptions")
+async def confer_subscriptions(request: Request) -> JSONResponse:
+    user = _confer_user(request)
+    if not user:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    _, body = await _read(request)
+    if body.get("action") == "set":
+        ttype = "folder" if body.get("target_type") == "folder" else "chat"
+        db.confer_set_subscription(user["id"], ttype, int(body.get("target_id") or 0), bool(body.get("on")))
+    return JSONResponse({"subscriptions": db.confer_list_subscriptions(user["id"])})
+
+
+@app.post("/confer/read")
+async def confer_read(request: Request) -> JSONResponse:
+    user = _confer_user(request)
+    if not user:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    _, body = await _read(request)
+    db.confer_set_read(user["id"], int(body.get("chat_id") or 0), int(body.get("last_msg_id") or 0))
+    return JSONResponse({"ok": True})
+
+
+@app.post("/confer/folder")
+async def confer_participant_folder(request: Request) -> JSONResponse:
+    # Any authenticated participant may add to the shared tree (communal server). Deletion is
+    # admin-only (see /confer/admin/folder) so one user can't wipe everyone's chats.
+    if not _confer_user(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    _, body = await _read(request)
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "Folder name required"}, status_code=400)
+    parent = body.get("parent_id")
+    db.confer_create_folder(name, int(parent) if parent else None)
+    return JSONResponse(db.confer_tree())
+
+
+@app.post("/confer/chat")
+async def confer_participant_chat(request: Request) -> JSONResponse:
+    if not _confer_user(request):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    _, body = await _read(request)
+    name = (body.get("name") or "").strip()
+    if not name:
+        return JSONResponse({"error": "Chat name required"}, status_code=400)
+    folder = body.get("folder_id")
+    db.confer_create_chat(name, int(folder) if folder else None)
+    return JSONResponse(db.confer_tree())
+
+
+# ---- admin endpoints (master/dashboard session): manage users + tree, send as 'admin' ----
+@app.post("/confer/admin/users")
+async def confer_admin_users(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    action = body.get("action")
+    if action == "create":
+        username = (body.get("username") or "").strip()
+        password = (body.get("password") or "").strip()
+        if len(username) < 2 or len(password) < 4:
+            return JSONResponse({"error": "Username ≥2 and password ≥4 characters"}, status_code=400)
+        uid = db.confer_create_user(username, password, (body.get("display_name") or "").strip())
+        if not uid:
+            return JSONResponse({"error": "Username already taken"}, status_code=409)
+    elif action == "revoke":
+        db.confer_revoke_user(int(body.get("user_id")), bool(body.get("revoked", True)))
+    elif action == "reset":
+        pw = (body.get("password") or "").strip()
+        if len(pw) < 4:
+            return JSONResponse({"error": "Password ≥4 characters"}, status_code=400)
+        db.confer_set_password(int(body.get("user_id")), pw)
+    return JSONResponse({"users": db.confer_list_users()})
+
+
+@app.post("/confer/admin/folder")
+async def confer_admin_folder(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if body.get("action") == "create":
+        name = (body.get("name") or "").strip()
+        if not name:
+            return JSONResponse({"error": "Folder name required"}, status_code=400)
+        parent = body.get("parent_id")
+        db.confer_create_folder(name, int(parent) if parent else None)
+    elif body.get("action") == "delete":
+        db.confer_delete_folder(int(body.get("folder_id")))
+    return JSONResponse(db.confer_tree())
+
+
+@app.post("/confer/admin/chat")
+async def confer_admin_chat(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    if body.get("action") == "create":
+        name = (body.get("name") or "").strip()
+        if not name:
+            return JSONResponse({"error": "Chat name required"}, status_code=400)
+        folder = body.get("folder_id")
+        db.confer_create_chat(name, int(folder) if folder else None)
+    elif body.get("action") == "delete":
+        db.confer_delete_chat(int(body.get("chat_id")))
+    return JSONResponse(db.confer_tree())
+
+
+@app.post("/confer/admin/tree")
+async def confer_admin_tree(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return JSONResponse({**db.confer_tree(), "presence": confer_hub.presence()})
+
+
+@app.post("/confer/admin/history")
+async def confer_admin_history(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    chat_id = int(body.get("chat_id") or 0)
+    after = body.get("after_id")
+    return JSONResponse({"messages": db.confer_list_messages(chat_id, after_id=int(after) if after else None)})
+
+
+@app.post("/confer/admin/send")
+async def confer_admin_send(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    return await _confer_store_and_fanout(
+        body.get("chat_id"), "admin", "Admin", body.get("kind"), body.get("text"), body.get("image"))
 
 
 # ---------------------------------------------------------------------------
@@ -1262,16 +1482,88 @@ async def messages(ws: WebSocket) -> None:
     # canonical print target "default" — that's what is_connected() and submit() look for.
     client = await relay.register(ws, "default")
     log.info("Printer device connected: %s", auth_id)
+
+    # A printer can switch this same socket into Confer mode. While it's a Confer participant the
+    # relay stops sending it print jobs (they queue), and it's shown as "in Confer mode".
+    confer_conn: "ConferConn | None" = None
+
+    async def _send_json(frame: dict) -> None:
+        await ws.send_text(json.dumps(frame))
+
     try:
         while True:
+            text = await ws.receive_text()
+            try:
+                frame = json.loads(text)
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(frame, dict):
+                continue
+            ftype = frame.get("type")
+            if ftype == "confer_hello":
+                uid = confer_sessions.resolve(frame.get("token"))
+                user = db.confer_get_user(uid) if uid else None
+                if not user:
+                    await _send_json({"type": "confer_error", "error": "auth"})
+                    continue
+                if confer_conn is None:
+                    confer_conn = ConferConn(send=_send_json, user_id=user["id"],
+                                             username=user["username"], display=user["display_name"])
+                    await confer_hub.register(confer_conn)
+                    await relay.set_confer_mode(client, True)
+                    log.info("Printer %s entered Confer mode as %s", auth_id, user["username"])
+                    await _send_json({"type": "confer_ready", "user": user})
+                    await confer_hub.deliver_catchup(confer_conn)
+            elif ftype == "mode" and frame.get("mode") == "print":
+                if confer_conn is not None:
+                    await confer_hub.unregister(confer_conn)
+                    confer_conn = None
+                    await relay.set_confer_mode(client, False)
+                    log.info("Printer %s returned to Print mode", auth_id)
+            elif ftype == "read" and confer_conn is not None:
+                db.confer_set_read(confer_conn.user_id, int(frame.get("chat_id") or 0),
+                                   int(frame.get("last_msg_id") or 0))
+            # Any other frame is ignored (kept for forward-compat).
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        if confer_conn is not None:
+            await confer_hub.unregister(confer_conn)
+        await relay.unregister(client)
+        log.info("Printer device disconnected: %s", auth_id)
+
+
+# ---------------------------------------------------------------------------
+# WebSocket — Confer live push for the web admin (dashboard session token)
+# ---------------------------------------------------------------------------
+@app.websocket("/confer/ws")
+async def confer_ws(ws: WebSocket) -> None:
+    # The dashboard passes its session token as a query param (WS can't set Authorization easily).
+    token = ws.query_params.get("token")
+    if not auth.verify_session(token):
+        await ws.close(code=4401)
+        return
+    await ws.accept()
+
+    async def _send_json(frame: dict) -> None:
+        await ws.send_text(json.dumps(frame))
+
+    conn = ConferConn(send=_send_json, user_id=None, username="admin", display="Admin", is_admin=True)
+    await confer_hub.register(conn)
+    log.info("Confer admin channel connected")
+    try:
+        while True:
+            # Push-only channel; the admin sends via REST. Reads keep the socket alive.
             await ws.receive_text()
     except WebSocketDisconnect:
         pass
     except Exception:
         pass
     finally:
-        await relay.unregister(client)
-        log.info("Printer device disconnected: %s", auth_id)
+        await confer_hub.unregister(conn)
+        log.info("Confer admin channel disconnected")
 
 
 # ---------------------------------------------------------------------------
@@ -1283,6 +1575,7 @@ async def _startup() -> None:
     if removed:
         log.info("Pruned %d logs older than %d days", removed, retention_days())
     db.prune_sessions()
+    db.confer_prune_messages(retention_days())
 
     async def _pruner() -> None:
         while True:
@@ -1291,6 +1584,7 @@ async def _startup() -> None:
                 n = db.prune_logs(retention_days(), err_retention_days())
                 if n:
                     log.info("Pruned %d expired logs", n)
+                db.confer_prune_messages(retention_days())
             except Exception as exc:
                 log.error("Log prune failed: %s", exc)
 

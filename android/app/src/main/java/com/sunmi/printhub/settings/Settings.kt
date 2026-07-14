@@ -100,6 +100,29 @@ class Settings(context: Context) {
         return id
     }
 
+    // ---- Confer (private chat) — token persists so the user stays logged in across restarts ----
+    var conferToken: String
+        get() = prefs.getString(K_CONFER_TOKEN, "") ?: ""
+        set(v) = prefs.edit().putString(K_CONFER_TOKEN, v).apply()
+
+    var conferUsername: String
+        get() = prefs.getString(K_CONFER_USER, "") ?: ""
+        set(v) = prefs.edit().putString(K_CONFER_USER, v).apply()
+
+    var conferDisplay: String
+        get() = prefs.getString(K_CONFER_DISPLAY, "") ?: ""
+        set(v) = prefs.edit().putString(K_CONFER_DISPLAY, v).apply()
+
+    /** True while the user wants the printer in Confer mode (persisted so it survives restarts). */
+    var conferMode: Boolean
+        get() = prefs.getBoolean(K_CONFER_MODE, false)
+        set(v) = prefs.edit().putBoolean(K_CONFER_MODE, v).apply()
+
+    fun clearConfer() {
+        prefs.edit().remove(K_CONFER_TOKEN).remove(K_CONFER_USER)
+            .remove(K_CONFER_DISPLAY).putBoolean(K_CONFER_MODE, false).apply()
+    }
+
     // ---- boot ----
     var autoStart: Boolean
         get() = prefs.getBoolean(K_AUTOSTART, true)
@@ -125,6 +148,10 @@ class Settings(context: Context) {
         private const val K_NET_DOMAIN = "internet_domain"
         private const val K_DEVICE_ID = "device_id"
         private const val K_DEVICE_SECRET = "device_secret"
+        private const val K_CONFER_TOKEN = "confer_token"
+        private const val K_CONFER_USER = "confer_username"
+        private const val K_CONFER_DISPLAY = "confer_display"
+        private const val K_CONFER_MODE = "confer_mode"
         private const val K_AUTOSTART = "auto_start"
     }
 }

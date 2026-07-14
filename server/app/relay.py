@@ -25,6 +25,10 @@ class Client:
     ip: str = ""
     connected_at: float = field(default_factory=time.time)
     info: Dict[str, Any] = field(default_factory=dict)
+    # A printer in Confer mode holds the same socket but must NOT receive print jobs (they'd
+    # interleave with chat traffic). While confer is True it's not a print target, so jobs queue
+    # and flush when it returns to Print mode.
+    confer: bool = False
 
 
 @dataclass
@@ -48,7 +52,15 @@ class Relay:
                 self.clients.remove(client)
 
     def is_connected(self, device_id: str = "default") -> bool:
-        return any(c.device_id == device_id for c in self.clients)
+        """A print target is available: a client for this device that is NOT in Confer mode."""
+        return any(c.device_id == device_id and not c.confer for c in self.clients)
+
+    async def set_confer_mode(self, client: Client, on: bool) -> None:
+        """Toggle a connected printer between Confer and Print mode. Returning to Print flushes
+        anything that queued while it was chatting."""
+        client.confer = on
+        if not on:
+            await self._flush(client.device_id)
 
     async def close_all(self, code: int = 1012) -> None:
         """Close every device socket (1012 = Service Restart) so clients reconnect immediately
@@ -69,7 +81,7 @@ class Relay:
 
         Returns True if delivered immediately, False if queued.
         """
-        target = next((c for c in self.clients if c.device_id == device_id), None)
+        target = next((c for c in self.clients if c.device_id == device_id and not c.confer), None)
         if target is None:
             self.pending.setdefault(device_id, deque()).append((job, on_delivered))
             return False
@@ -87,7 +99,7 @@ class Relay:
         queue = self.pending.get(device_id)
         if not queue:
             return
-        target = next((c for c in self.clients if c.device_id == device_id), None)
+        target = next((c for c in self.clients if c.device_id == device_id and not c.confer), None)
         if target is None:
             return
         while queue:

@@ -26,6 +26,11 @@ object Hub {
     @Volatile
     var internetConnected = false
 
+    // The active internet WebSocket listener (owned by the service). Confer sends its frames
+    // (hello / mode / read) through this same authenticated channel.
+    @Volatile
+    var internet: com.sunmi.printhub.net.InternetListener? = null
+
     /** Notified after every dispatched job (any source) so MQTT can publish lastjob, etc. */
     @Volatile
     var jobCompleteListener: ((PrintDispatcher.Result, com.sunmi.printhub.db.JobSource) -> Unit)? = null
@@ -40,6 +45,7 @@ object Hub {
         settings = Settings(app)
         printer = PrinterManager(app)
         jobLog = JobLog(app)
+        ConferManager.init(app)
         initialised = true
     }
 

@@ -1,6 +1,7 @@
 package com.sunmi.printhub.net
 
 import android.util.Log
+import com.sunmi.printhub.core.ConferManager
 import com.sunmi.printhub.core.Hub
 import com.sunmi.printhub.core.PrintDispatcher
 import com.sunmi.printhub.db.JobSource
@@ -70,6 +71,13 @@ class InternetListener(
         reconnectThread?.interrupt()
     }
 
+    /** Send a raw JSON frame (Confer hello / mode / read) over the socket. False if not connected. */
+    fun sendFrame(json: String): Boolean = try {
+        webSocket?.send(json) ?: false
+    } catch (t: Throwable) {
+        Log.w(TAG, "sendFrame failed: ${t.message}"); false
+    }
+
     private fun url(): String {
         val d = domain.trim().removeSuffix("/")
         val base = when {
@@ -94,10 +102,18 @@ class InternetListener(
                 Hub.internetConnected = true
                 backoff = MIN_BACKOFF_MS
                 Hub.reportEvent("info", "printer connected to Watchtower", "printer.net")
+                // Re-announce Confer mode after a (re)connect so chat resumes without user action.
+                ConferManager.onSocketOpen()
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                // The channel is HMAC-authenticated, so jobs are trusted (no per-job password).
+                // Confer frames are tagged with a "type" of confer_*; route those to the chat brain.
+                // Everything else is a trusted (HMAC-authenticated) print job.
+                val frame = try { org.json.JSONObject(text) } catch (_: Throwable) { null }
+                if (frame != null && frame.optString("type").startsWith("confer")) {
+                    ConferManager.onFrame(frame)
+                    return
+                }
                 if (text.contains("\"format\"") || text.contains("\"image")) {
                     PrintDispatcher.dispatchJson(
                         text, JobSource.INTERNET, requirePassword = false, sourceInfo = "internet"

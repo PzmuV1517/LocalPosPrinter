@@ -132,6 +132,57 @@ class Database:
                     created_at    REAL NOT NULL,
                     last_used_at  REAL
                 );
+
+                -- ---- Confer (private printer chat) ----
+                -- Per-user accounts issued by the server owner; passwords scrypt-hashed.
+                CREATE TABLE IF NOT EXISTS confer_users (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username     TEXT UNIQUE NOT NULL,
+                    pw_hash      TEXT NOT NULL,
+                    display_name TEXT DEFAULT '',
+                    created_at   REAL NOT NULL,
+                    revoked      INTEGER DEFAULT 0
+                );
+                -- Folders form a tree via parent_id; chats live at the root or inside a folder.
+                CREATE TABLE IF NOT EXISTS confer_folders (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name       TEXT NOT NULL,
+                    parent_id  INTEGER REFERENCES confer_folders(id) ON DELETE CASCADE,
+                    created_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS confer_chats (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name       TEXT NOT NULL,
+                    folder_id  INTEGER REFERENCES confer_folders(id) ON DELETE CASCADE,
+                    created_at REAL NOT NULL
+                );
+                -- Message bodies are encrypted at rest (SecretBox); 'body_enc' holds ciphertext of
+                -- either the text or, for images, the base64 PNG. Retention-pruned like logs.
+                CREATE TABLE IF NOT EXISTS confer_messages (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id        INTEGER NOT NULL REFERENCES confer_chats(id) ON DELETE CASCADE,
+                    sender         TEXT NOT NULL,          -- confer username, or 'admin'
+                    sender_display TEXT DEFAULT '',
+                    kind           TEXT DEFAULT 'text',    -- 'text' | 'image'
+                    body_enc       TEXT NOT NULL,
+                    ts             REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_confer_msg_chat ON confer_messages(chat_id, id);
+                CREATE INDEX IF NOT EXISTS idx_confer_msg_ts   ON confer_messages(ts);
+                -- Screen-off subscriptions: which chats/folders a user auto-prints when idle.
+                CREATE TABLE IF NOT EXISTS confer_subscriptions (
+                    user_id     INTEGER NOT NULL REFERENCES confer_users(id) ON DELETE CASCADE,
+                    target_type TEXT NOT NULL,             -- 'chat' | 'folder'
+                    target_id   INTEGER NOT NULL,
+                    PRIMARY KEY(user_id, target_type, target_id)
+                );
+                -- Per-user, per-chat high-water mark for offline catch-up delivery.
+                CREATE TABLE IF NOT EXISTS confer_reads (
+                    user_id     INTEGER NOT NULL REFERENCES confer_users(id) ON DELETE CASCADE,
+                    chat_id     INTEGER NOT NULL REFERENCES confer_chats(id) ON DELETE CASCADE,
+                    last_msg_id INTEGER DEFAULT 0,
+                    PRIMARY KEY(user_id, chat_id)
+                );
                 """
             )
             # Add columns that may be missing on databases created by older versions.
@@ -177,6 +228,15 @@ class Database:
             row = self._conn.execute(
                 "SELECT expires_at FROM sessions WHERE token=?", (token,)).fetchone()
         return bool(row and row["expires_at"] > time.time())
+
+    def session_sub(self, token: str) -> Optional[str]:
+        """Return a valid session's subject (e.g. 'admin' or 'confer:<id>'), or None."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT sub, expires_at FROM sessions WHERE token=?", (token,)).fetchone()
+        if row and row["expires_at"] > time.time():
+            return row["sub"]
+        return None
 
     def delete_session(self, token: str) -> None:
         with self._lock:
@@ -644,3 +704,226 @@ class Database:
             }
             for r in rows
         ]
+
+    # ---- Confer: user accounts ----
+    def confer_create_user(self, username: str, password: str, display_name: str = "") -> Optional[int]:
+        """Create a Confer account. Returns the new id, or None if the username is taken."""
+        with self._lock:
+            try:
+                cur = self._conn.execute(
+                    "INSERT INTO confer_users(username,pw_hash,display_name,created_at,revoked)"
+                    " VALUES(?,?,?,?,0)",
+                    (username, crypto.hash_password(password), display_name or username, time.time()),
+                )
+                self._conn.commit()
+                return cur.lastrowid
+            except sqlite3.IntegrityError:
+                return None
+
+    def confer_verify_user(self, username: str, password: str) -> Optional[dict]:
+        """Return the user row (as dict) if the password matches and the account is active."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM confer_users WHERE username=? AND revoked=0", (username,)
+            ).fetchone()
+        if row and crypto.verify_password(password, row["pw_hash"]):
+            return {"id": row["id"], "username": row["username"], "display_name": row["display_name"]}
+        return None
+
+    def confer_get_user(self, user_id: int) -> Optional[dict]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT id,username,display_name,revoked FROM confer_users WHERE id=?", (user_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def confer_set_password(self, user_id: int, password: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE confer_users SET pw_hash=? WHERE id=?",
+                (crypto.hash_password(password), user_id))
+            self._conn.commit()
+            return bool(cur.rowcount)
+
+    def confer_revoke_user(self, user_id: int, revoked: bool = True) -> bool:
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE confer_users SET revoked=? WHERE id=?", (1 if revoked else 0, user_id))
+            self._conn.commit()
+            return bool(cur.rowcount)
+
+    def confer_list_users(self) -> List[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id,username,display_name,created_at,revoked FROM confer_users ORDER BY username"
+            ).fetchall()
+        return [
+            {"id": r["id"], "username": r["username"], "display_name": r["display_name"],
+             "created_at": r["created_at"], "revoked": bool(r["revoked"])}
+            for r in rows
+        ]
+
+    # ---- Confer: folders & chats (the tree) ----
+    def confer_create_folder(self, name: str, parent_id: Optional[int] = None) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO confer_folders(name,parent_id,created_at) VALUES(?,?,?)",
+                (name, parent_id, time.time()))
+            self._conn.commit()
+            return cur.lastrowid
+
+    def confer_delete_folder(self, folder_id: int) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM confer_folders WHERE id=?", (folder_id,))
+            self._conn.commit()
+            return bool(cur.rowcount)
+
+    def confer_create_chat(self, name: str, folder_id: Optional[int] = None) -> int:
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO confer_chats(name,folder_id,created_at) VALUES(?,?,?)",
+                (name, folder_id, time.time()))
+            self._conn.commit()
+            return cur.lastrowid
+
+    def confer_delete_chat(self, chat_id: int) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM confer_chats WHERE id=?", (chat_id,))
+            self._conn.commit()
+            return bool(cur.rowcount)
+
+    def confer_chat_exists(self, chat_id: int) -> bool:
+        with self._lock:
+            return self._conn.execute(
+                "SELECT 1 FROM confer_chats WHERE id=?", (chat_id,)).fetchone() is not None
+
+    def confer_tree(self) -> dict:
+        """Return the whole folder/chat tree (shared by all authenticated users)."""
+        with self._lock:
+            folders = self._conn.execute(
+                "SELECT id,name,parent_id,created_at FROM confer_folders ORDER BY name").fetchall()
+            chats = self._conn.execute(
+                "SELECT id,name,folder_id,created_at FROM confer_chats ORDER BY name").fetchall()
+        return {
+            "folders": [{"id": r["id"], "name": r["name"], "parent_id": r["parent_id"]} for r in folders],
+            "chats": [{"id": r["id"], "name": r["name"], "folder_id": r["folder_id"]} for r in chats],
+        }
+
+    def confer_chats_in_folder(self, folder_id: int) -> List[int]:
+        """All chat ids under a folder, recursing into subfolders."""
+        with self._lock:
+            folders = self._conn.execute(
+                "SELECT id,parent_id FROM confer_folders").fetchall()
+            chats = self._conn.execute("SELECT id,folder_id FROM confer_chats").fetchall()
+        children: Dict[Optional[int], List[int]] = {}
+        for f in folders:
+            children.setdefault(f["parent_id"], []).append(f["id"])
+        wanted = set()
+        stack = [folder_id]
+        while stack:
+            fid = stack.pop()
+            wanted.add(fid)
+            stack.extend(children.get(fid, []))
+        return [c["id"] for c in chats if c["folder_id"] in wanted]
+
+    # ---- Confer: messages (encrypted at rest) ----
+    def confer_add_message(self, chat_id: int, sender: str, sender_display: str,
+                           kind: str, body: str) -> Optional[dict]:
+        """Store an encrypted message. Returns the stored row (plaintext body) or None if the
+        chat is gone."""
+        if not self.confer_chat_exists(chat_id):
+            return None
+        ts = time.time()
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO confer_messages(chat_id,sender,sender_display,kind,body_enc,ts)"
+                " VALUES(?,?,?,?,?,?)",
+                (chat_id, sender, sender_display or sender, kind or "text", self.box.encrypt(body), ts))
+            self._conn.commit()
+            mid = cur.lastrowid
+        return {"id": mid, "chat_id": chat_id, "sender": sender, "sender_display": sender_display or sender,
+                "kind": kind or "text", "body": body, "ts": ts}
+
+    def confer_list_messages(self, chat_id: int, limit: int = 200,
+                             after_id: Optional[int] = None) -> List[dict]:
+        clauses = ["chat_id = ?"]
+        params: List[Any] = [chat_id]
+        if after_id:
+            clauses.append("id > ?")
+            params.append(after_id)
+        where = "WHERE " + " AND ".join(clauses)
+        params.append(max(1, min(int(limit), 1000)))
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT * FROM confer_messages {where} ORDER BY id DESC LIMIT ?", params).fetchall()
+        rows = list(reversed(rows))
+        return [self._confer_msg_row(r) for r in rows]
+
+    def confer_messages_since(self, chat_id: int, after_id: int, limit: int = 500) -> List[dict]:
+        """Ascending messages in a chat with id > after_id — for offline catch-up."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM confer_messages WHERE chat_id=? AND id>? ORDER BY id ASC LIMIT ?",
+                (chat_id, after_id, max(1, min(int(limit), 1000)))).fetchall()
+        return [self._confer_msg_row(r) for r in rows]
+
+    def _confer_msg_row(self, r: sqlite3.Row) -> dict:
+        return {
+            "id": r["id"], "chat_id": r["chat_id"], "sender": r["sender"],
+            "sender_display": r["sender_display"], "kind": r["kind"],
+            "body": self.box.decrypt(r["body_enc"]) or "", "ts": r["ts"],
+        }
+
+    def confer_prune_messages(self, retention_days: int) -> int:
+        if retention_days <= 0:
+            return 0
+        with self._lock:
+            cur = self._conn.execute(
+                "DELETE FROM confer_messages WHERE ts < ?", (time.time() - retention_days * 86400,))
+            self._conn.commit()
+            return cur.rowcount
+
+    # ---- Confer: subscriptions & read state ----
+    def confer_set_subscription(self, user_id: int, target_type: str, target_id: int, on: bool) -> None:
+        with self._lock:
+            if on:
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO confer_subscriptions(user_id,target_type,target_id)"
+                    " VALUES(?,?,?)", (user_id, target_type, target_id))
+            else:
+                self._conn.execute(
+                    "DELETE FROM confer_subscriptions WHERE user_id=? AND target_type=? AND target_id=?",
+                    (user_id, target_type, target_id))
+            self._conn.commit()
+
+    def confer_list_subscriptions(self, user_id: int) -> List[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT target_type,target_id FROM confer_subscriptions WHERE user_id=?",
+                (user_id,)).fetchall()
+        return [{"type": r["target_type"], "id": r["target_id"]} for r in rows]
+
+    def confer_subscribed_chat_ids(self, user_id: int) -> set:
+        """Flatten a user's chat + folder subscriptions into a set of chat ids."""
+        chat_ids = set()
+        for sub in self.confer_list_subscriptions(user_id):
+            if sub["type"] == "chat":
+                chat_ids.add(sub["id"])
+            elif sub["type"] == "folder":
+                chat_ids.update(self.confer_chats_in_folder(sub["id"]))
+        return chat_ids
+
+    def confer_get_read(self, user_id: int, chat_id: int) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT last_msg_id FROM confer_reads WHERE user_id=? AND chat_id=?",
+                (user_id, chat_id)).fetchone()
+        return row["last_msg_id"] if row else 0
+
+    def confer_set_read(self, user_id: int, chat_id: int, last_msg_id: int) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO confer_reads(user_id,chat_id,last_msg_id) VALUES(?,?,?)"
+                " ON CONFLICT(user_id,chat_id) DO UPDATE SET last_msg_id=MAX(last_msg_id,excluded.last_msg_id)",
+                (user_id, chat_id, last_msg_id))
+            self._conn.commit()

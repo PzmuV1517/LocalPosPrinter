@@ -157,6 +157,8 @@ class PrintHubService : Service() {
             internet = InternetListener(
                 s.internetDomain, deviceId = s.deviceId, deviceSecret = s.deviceSecret,
             ).also { it.start() }
+            // Expose it so Confer can send hello/mode/read frames over the same channel.
+            Hub.internet = internet
         }
     }
 
@@ -181,6 +183,7 @@ class PrintHubService : Service() {
             internet?.stop()
         } catch (_: Throwable) {
         }
+        if (Hub.internet === internet) Hub.internet = null
         internet = null
     }
 

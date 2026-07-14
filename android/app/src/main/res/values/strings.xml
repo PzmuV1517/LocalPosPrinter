@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Sunmi Print Hub</string>
+    <string name="app_name">Print Hub</string>
 
     <string name="menu_settings">Settings</string>
     <string name="menu_job_log">Job Log</string>

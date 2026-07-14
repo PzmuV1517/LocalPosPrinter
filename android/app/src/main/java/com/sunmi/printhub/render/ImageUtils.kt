@@ -26,6 +26,13 @@ object ImageUtils {
         return if (idx >= 0) data.substring(idx + "base64,".length) else data
     }
 
+    /** Encode a bitmap to a base64 PNG string (no line wraps) for sending over the wire. */
+    fun encodeBase64Png(src: Bitmap): String {
+        val out = java.io.ByteArrayOutputStream()
+        src.compress(Bitmap.CompressFormat.PNG, 100, out)
+        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+    }
+
     /** Scale to exactly [targetWidth] preserving aspect ratio (only downscaling if wider). */
     fun scaleToWidth(src: Bitmap, targetWidth: Int): Bitmap {
         if (src.width == targetWidth) return src

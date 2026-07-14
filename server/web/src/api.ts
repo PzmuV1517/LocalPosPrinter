@@ -82,7 +82,44 @@ export async function runSetup(payload: Record<string, unknown>): Promise<string
 export async function serverUp(): Promise<boolean> {
   try { return (await fetch('/healthz', { cache: 'no-store' })).ok } catch { return false }
 }
-export const getStatus = () => post<{ device_connected: boolean; pending_jobs: number }>('/status', {})
+export const getStatus = () => post<{ device_connected: boolean; pending_jobs: number; confer_mode?: boolean; confer_presence?: ConferPresence[] }>('/status', {})
+
+// ---- Confer (admin view) ----
+export interface ConferFolder { id: number; name: string; parent_id: number | null }
+export interface ConferChat { id: number; name: string; folder_id: number | null }
+export interface ConferUser { id: number; username: string; display_name: string; created_at: number; revoked: boolean }
+export interface ConferMessage { id: number; chat_id: number; sender: string; sender_display: string; kind: string; body: string; ts: number }
+export interface ConferPresence { username: string; display: string; admin: boolean; since: number }
+export interface ConferTree { folders: ConferFolder[]; chats: ConferChat[]; presence: ConferPresence[] }
+
+export const conferTree = () => post<ConferTree>('/confer/admin/tree', {})
+export const conferUsers = () => post<{ users: ConferUser[] }>('/confer/admin/users', {})
+export const conferCreateUser = (username: string, password: string, display_name: string) =>
+  postRaw('/confer/admin/users', { action: 'create', username, password, display_name })
+export const conferRevokeUser = (user_id: number, revoked: boolean) =>
+  post<{ users: ConferUser[] }>('/confer/admin/users', { action: 'revoke', user_id, revoked })
+export const conferResetUser = (user_id: number, password: string) =>
+  postRaw('/confer/admin/users', { action: 'reset', user_id, password })
+export const conferCreateFolder = (name: string, parent_id?: number | null) =>
+  post<ConferTree>('/confer/admin/folder', { action: 'create', name, parent_id })
+export const conferDeleteFolder = (folder_id: number) =>
+  post<ConferTree>('/confer/admin/folder', { action: 'delete', folder_id })
+export const conferCreateChat = (name: string, folder_id?: number | null) =>
+  post<ConferTree>('/confer/admin/chat', { action: 'create', name, folder_id })
+export const conferDeleteChat = (chat_id: number) =>
+  post<ConferTree>('/confer/admin/chat', { action: 'delete', chat_id })
+export const conferHistory = (chat_id: number) =>
+  post<{ messages: ConferMessage[] }>('/confer/admin/history', { chat_id })
+export const conferSendText = (chat_id: number, text: string) =>
+  postRaw('/confer/admin/send', { chat_id, kind: 'text', text })
+export const conferSendImage = (chat_id: number, image: string) =>
+  postRaw('/confer/admin/send', { chat_id, kind: 'image', image })
+
+/** WebSocket URL for the admin live channel, carrying the session token as a query param. */
+export function conferWsUrl(): string {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${location.host}/confer/ws?token=${encodeURIComponent(getToken() ?? '')}`
+}
 
 // ---- logs / devices ----
 export const getLogs = (filters: Record<string, unknown>) => post<LogsResponse>('/watchtower/logs', filters)

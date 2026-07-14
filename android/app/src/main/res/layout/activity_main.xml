@@ -1,122 +1,341 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:fillViewport="true">
+    android:orientation="vertical">
 
+    <!-- Simple tab bar (theme-agnostic; two toggling buttons) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="16dp">
+        android:orientation="horizontal">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <Button
+            android:id="@+id/tabPrint"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="@string/label_format" />
+            android:layout_weight="1"
+            android:text="Print" />
 
-        <Spinner
-            android:id="@+id/formatSpinner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <TextView
-            android:layout_width="wrap_content"
+        <Button
+            android:id="@+id/tabConfer"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="@string/label_print_mode" />
-
-        <Spinner
-            android:id="@+id/modeSpinner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
-
-        <EditText
-            android:id="@+id/titleInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="@string/hint_title"
-            android:inputType="text" />
-
-        <EditText
-            android:id="@+id/textInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="@string/hint_text"
-            android:gravity="top"
-            android:minLines="4"
-            android:inputType="textMultiLine" />
-
-        <EditText
-            android:id="@+id/textSizeInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="Text size (px, default 26)"
-            android:inputType="number" />
-
-        <EditText
-            android:id="@+id/barcodeTypeInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:hint="barcode_type (e.g. CODE128)"
-            android:inputType="textCapCharacters"
-            android:visibility="gone" />
-
-        <TextView
-            android:id="@+id/borderStyleLabel"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text="Border style"
-            android:visibility="gone" />
-
-        <Spinner
-            android:id="@+id/borderStyleSpinner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:visibility="gone" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:orientation="horizontal">
-
-            <Button
-                android:id="@+id/previewButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/action_preview" />
-
-            <Button
-                android:id="@+id/printButton"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="@string/action_print" />
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/preview_heading"
-            android:textStyle="bold" />
-
-        <ImageView
-            android:id="@+id/previewImage"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:adjustViewBounds="true"
-            android:background="#EEEEEE"
-            android:contentDescription="@string/preview_heading"
-            android:scaleType="fitStart" />
-
+            android:layout_weight="1"
+            android:text="Confer" />
     </LinearLayout>
-</ScrollView>
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- ===================== PRINT TAB ===================== -->
+        <ScrollView
+            android:id="@+id/printContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/label_format" />
+
+                <Spinner
+                    android:id="@+id/formatSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="@string/label_print_mode" />
+
+                <Spinner
+                    android:id="@+id/modeSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <EditText
+                    android:id="@+id/titleInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="@string/hint_title"
+                    android:inputType="text" />
+
+                <EditText
+                    android:id="@+id/textInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="@string/hint_text"
+                    android:gravity="top"
+                    android:minLines="4"
+                    android:inputType="textMultiLine" />
+
+                <EditText
+                    android:id="@+id/textSizeInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="Text size (px, default 26)"
+                    android:inputType="number" />
+
+                <EditText
+                    android:id="@+id/barcodeTypeInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="barcode_type (e.g. CODE128)"
+                    android:inputType="textCapCharacters"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/borderStyleLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Border style"
+                    android:visibility="gone" />
+
+                <Spinner
+                    android:id="@+id/borderStyleSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:visibility="gone" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/previewButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/action_preview" />
+
+                    <Button
+                        android:id="@+id/printButton"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/action_print" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/preview_heading"
+                    android:textStyle="bold" />
+
+                <ImageView
+                    android:id="@+id/previewImage"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:adjustViewBounds="true"
+                    android:background="#EEEEEE"
+                    android:contentDescription="@string/preview_heading"
+                    android:scaleType="fitStart" />
+
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- ===================== CONFER TAB ===================== -->
+        <LinearLayout
+            android:id="@+id/conferContainer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:padding="16dp"
+            android:visibility="gone">
+
+            <!-- Login sub-view -->
+            <LinearLayout
+                android:id="@+id/conferLogin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Sign in to Confer"
+                    android:textStyle="bold"
+                    android:textSize="18sp" />
+
+                <TextView
+                    android:id="@+id/conferServerHint"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:textSize="12sp"
+                    android:text="Server: (set the internet domain in Settings)" />
+
+                <EditText
+                    android:id="@+id/conferUser"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="Username"
+                    android:inputType="text"
+                    android:autofillHints="username" />
+
+                <EditText
+                    android:id="@+id/conferPass"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="Password"
+                    android:inputType="textPassword"
+                    android:autofillHints="password" />
+
+                <Button
+                    android:id="@+id/conferLoginBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="Sign in" />
+            </LinearLayout>
+
+            <!-- Main chat sub-view -->
+            <LinearLayout
+                android:id="@+id/conferMain"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:id="@+id/conferWho"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="" />
+
+                    <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/conferModeSwitch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Confer mode" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/conferStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="12sp"
+                    android:text="Print mode" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <Spinner
+                        android:id="@+id/chatSpinner"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1" />
+
+                    <CheckBox
+                        android:id="@+id/subscribeCheck"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Notify" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/newChatBtn"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="New chat" />
+
+                    <Button
+                        android:id="@+id/newFolderBtn"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="New folder" />
+
+                    <Button
+                        android:id="@+id/conferLogoutBtn"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Sign out" />
+                </LinearLayout>
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/messagesList"
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
+                    android:layout_marginTop="6dp" />
+
+                <TextView
+                    android:id="@+id/charCount"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textSize="11sp"
+                    android:gravity="end"
+                    android:text="0/888" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <EditText
+                        android:id="@+id/composeInput"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:hint="Message…"
+                        android:inputType="textMultiLine|textCapSentences"
+                        android:maxLines="4" />
+
+                    <Button
+                        android:id="@+id/imageBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Img" />
+
+                    <Button
+                        android:id="@+id/sendBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Send" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+    </FrameLayout>
+</LinearLayout>
