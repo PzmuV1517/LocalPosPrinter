@@ -13,8 +13,8 @@ android {
         applicationId "com.sunmi.printhub"
         minSdk 25
         targetSdk 28
-        versionCode 17
-        versionName "2.1.4"
+        versionCode 18
+        versionName "2.1.5"
     }
 
     buildTypes {
@@ -34,6 +34,12 @@ android {
     buildFeatures {
         aidl true
         viewBinding true
+    }
+    lint {
+        // targetSdk 28 is intentional (Sunmi printer AIDL). Google Play's "target API 31+"
+        // rule turned this lint fatal purely by calendar date; we're not shipping via Play,
+        // so don't let it block release builds.
+        disable 'ExpiredTargetSdkVersion'
     }
 }
 

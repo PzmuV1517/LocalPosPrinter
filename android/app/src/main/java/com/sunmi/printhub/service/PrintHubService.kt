@@ -108,6 +108,27 @@ class PrintHubService : Service() {
         return START_STICKY
     }
 
+    /**
+     * The user swiped the app off the recent-apps list. On stock Android a foreground service
+     * survives this, but aggressive OEM ROMs (Sunmi included) tear the whole process down anyway.
+     * START_STICKY alone can leave a multi-minute gap, so we also schedule an almost-immediate
+     * restart via AlarmManager: whichever path wins, the print listener is never down for long.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val restart = Intent(applicationContext, PrintHubService::class.java)
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        else PendingIntent.FLAG_UPDATE_CURRENT
+        val pi = PendingIntent.getService(this, 1, restart, flags)
+        try {
+            val am = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            am.set(android.app.AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1000, pi)
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to schedule restart after task removal", t)
+        }
+        super.onTaskRemoved(rootIntent)
+    }
+
     private fun startChannels() {
         val s = Hub.settings
 

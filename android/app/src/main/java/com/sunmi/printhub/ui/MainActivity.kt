@@ -70,6 +70,9 @@ class MainActivity : AppCompatActivity() {
         // Ensure the network channels are running.
         PrintHubService.start(this)
 
+        // Ask the OS to stop killing us for "battery" — a POS hub must stay listening 24/7.
+        requestIgnoreBatteryOptimizations()
+
         // Quietly check GitHub for a newer release; prompts only if one is available.
         com.sunmi.printhub.update.AppUpdater.check(this, silent = true)
     }
@@ -112,6 +115,22 @@ class MainActivity : AppCompatActivity() {
                 toast("Print ${result.status.wire}" + (result.error?.let { ": $it" } ?: ""))
             }
         }
+    }
+
+    /**
+     * One-time nudge to whitelist the app from Doze / battery optimization. Without this the OS
+     * can freeze or kill the foreground service in the background; with it the print listener
+     * stays alive. If already whitelisted (or the dialog is unavailable) this is a no-op.
+     */
+    private fun requestIgnoreBatteryOptimizations() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.M) return
+        try {
+            val pm = getSystemService(POWER_SERVICE) as android.os.PowerManager
+            if (pm.isIgnoringBatteryOptimizations(packageName)) return
+            val i = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                .setData(android.net.Uri.parse("package:$packageName"))
+            startActivity(i)
+        } catch (_: Throwable) { /* some ROMs lack this screen; the service still runs */ }
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
