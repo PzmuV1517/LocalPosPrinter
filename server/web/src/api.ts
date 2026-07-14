@@ -6,9 +6,21 @@ import type {
 
 const TOKEN_KEY = 'wt_token'
 
-export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY)
-export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t)
-export const clearToken = () => localStorage.removeItem(TOKEN_KEY)
+// When running inside the Watchtower Mobile app, a native bridge persists the token so login
+// survives app restarts even if the WebView drops its localStorage. Harmless in a browser.
+interface NativeBridge { getToken?: () => string; saveToken?: (t: string) => void }
+const bridge = (): NativeBridge | undefined => (window as unknown as { Android?: NativeBridge }).Android
+
+export const getToken = (): string | null => {
+  let t = localStorage.getItem(TOKEN_KEY)
+  if (!t) {
+    const nt = bridge()?.getToken?.()
+    if (nt) { t = nt; localStorage.setItem(TOKEN_KEY, nt) }  // rehydrate from native
+  }
+  return t
+}
+export const setToken = (t: string) => { localStorage.setItem(TOKEN_KEY, t); bridge()?.saveToken?.(t) }
+export const clearToken = () => { localStorage.removeItem(TOKEN_KEY); bridge()?.saveToken?.('') }
 
 /** Thrown on a 401 so the app can drop back to the login gate. */
 export class Unauthorized extends Error {}
