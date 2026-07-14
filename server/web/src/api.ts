@@ -110,7 +110,7 @@ export const restartServer = () => post<{ ok: boolean; restarting: boolean }>('/
 
 // ---- print / preview ----
 export async function preview(payload: unknown): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
-  const r = await fetch('/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+  const r = await fetch('/preview', { method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) })
   if (!r.ok) { const e = await r.json().catch(() => ({})); return { ok: false, error: e.error || 'Preview error' } }
   return { ok: true, url: URL.createObjectURL(await r.blob()) }
 }
