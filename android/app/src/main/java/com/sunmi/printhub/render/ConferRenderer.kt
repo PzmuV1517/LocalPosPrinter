@@ -66,14 +66,17 @@ object ConferRenderer {
         return bmp
     }
 
-    /** A text message. Your own is right-aligned; others show name + a `>`-prefixed body. */
+    /**
+     * A text message. Your own sits on the right — your name, then the message closed with a `<`.
+     * Others sit on the left — their name, then the message opened with a `>`. The arrows point
+     * inward toward each speaker's side.
+     */
     fun renderText(name: String, text: String, mine: Boolean, w: Int): Bitmap {
         val inner = (w - 2 * PAD).toInt().coerceAtLeast(1)
-        if (mine) {
-            return block(layout(text, textPaint(TEXT_SIZE, false), inner, Layout.Alignment.ALIGN_OPPOSITE), w, 6f, 10f)
-        }
-        val nameBmp = block(layout(name, textPaint(NAME_SIZE, true), inner, Layout.Alignment.ALIGN_NORMAL), w, 6f, 0f)
-        val bodyBmp = block(layout("> $text", textPaint(TEXT_SIZE, false), inner, Layout.Alignment.ALIGN_NORMAL), w, 0f, 10f)
+        val align = if (mine) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL
+        val body = if (mine) "$text <" else "> $text"
+        val nameBmp = block(layout(name, textPaint(NAME_SIZE, true), inner, align), w, 6f, 0f)
+        val bodyBmp = block(layout(body, textPaint(TEXT_SIZE, false), inner, align), w, 0f, 10f)
         return stack(listOf(nameBmp, bodyBmp), w)
     }
 

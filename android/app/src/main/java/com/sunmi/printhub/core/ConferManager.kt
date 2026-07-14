@@ -226,7 +226,9 @@ object ConferManager {
                 } else {
                     ConferRenderer.renderText(msg.senderDisplay, msg.body, mine, w)
                 }
-                Hub.printer.printBitmap(bmp, false, 2)
+                // Feed a few lines after each message so the last line clears the print head /
+                // tear bar instead of staying tucked just inside the printer.
+                Hub.printer.printBitmap(bmp, false, 4)
             } catch (t: Throwable) { Log.e(TAG, "message print failed", t) }
         }
     }
