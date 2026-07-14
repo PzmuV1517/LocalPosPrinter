@@ -33,16 +33,16 @@ object ReceiptRenderer {
 
     // MUIE (Minimal Unified Incident Envelope) alert layout.
     // Kept in sync with server/app/render.py (MUIE alert layout).
-    private const val ALERT_SIZE = 30f
-    private const val ALERT_TYPE_SIZE = 15f
-    private const val ALERT_TEXT_SIZE = 20f    // size of the alert message body
-    private const val ALERT_DASH_SIZE = 10f    // size of the "- - -" dash rule
-    private const val ALERT_STAR_SIZE = 10f    // size of the "* * *" star rule
-    private const val ALERT_FOOTER_SIZE = 15f
-    private const val ALERT_THANKS_SIZE = 12f      // "Thank you for using M.U.I.E."
-    private const val ALERT_EXPANSION_SIZE = 10f   // "(Minimal Unified Incident Envelope)"
-    private const val ALERT_HEADER_SPACING = 2f    // vertical padding around header lines (ALERT / type)
-    private const val ALERT_FOOTER_SPACING = 2f    // vertical padding around footer lines (service/time, thanks, expansion)
+    private const val ALERT_SIZE = 46f         // the big "ALERT" header
+    private const val ALERT_TYPE_SIZE = 24f    // the severity type line
+    private const val ALERT_TEXT_SIZE = 32f    // size of the alert message body (most important for legibility)
+    private const val ALERT_DASH_SIZE = 15f    // size of the "- - -" dash rule
+    private const val ALERT_STAR_SIZE = 15f    // size of the "* * *" star rule
+    private const val ALERT_FOOTER_SIZE = 22f
+    private const val ALERT_THANKS_SIZE = 18f      // "Thank you for using M.U.I.E."
+    private const val ALERT_EXPANSION_SIZE = 15f   // "(Minimal Unified Incident Envelope)"
+    private const val ALERT_HEADER_SPACING = 4f    // vertical padding around header lines (ALERT / type)
+    private const val ALERT_FOOTER_SPACING = 4f    // vertical padding around footer lines (service/time, thanks, expansion)
 
     // Font per alert line, chosen by number (see alertFontFiles): 1=Jersey10 (default),
     // 2=built-in mono, 3=Jacquard12, 4=Doto. Missing font files fall back to mono.
