@@ -111,7 +111,11 @@ export const restartServer = () => post<{ ok: boolean; restarting: boolean }>('/
 // ---- print / preview ----
 export async function preview(payload: unknown): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
   const r = await fetch('/preview', { method: 'POST', headers: authHeaders(), body: JSON.stringify(payload) })
-  if (!r.ok) { const e = await r.json().catch(() => ({})); return { ok: false, error: e.error || 'Preview error' } }
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({} as { error?: string }))
+    const hint = r.status === 413 ? ' (image too large for the proxy)' : ''
+    return { ok: false, error: (e.error || `Preview failed (${r.status})`) + hint }
+  }
   return { ok: true, url: URL.createObjectURL(await r.blob()) }
 }
 export const printPayload = (payload: unknown) => postRaw('/print', payload)

@@ -34,16 +34,16 @@ MIN_TEXT_SIZE = 10
 MAX_TEXT_SIZE = 120
 
 # MUIE (Minimal Unified Incident Envelope) alert layout.
-ALERT_SIZE = 30
-ALERT_TYPE_SIZE = 15
-ALERT_TEXT_SIZE = 20   # size of the alert message body
-ALERT_DASH_SIZE = 10    # size of the "- - -" dash rule
-ALERT_STAR_SIZE = 10   # size of the "* * *" star rule
-ALERT_FOOTER_SIZE = 15
-ALERT_THANKS_SIZE = 12     # "Thank you for using M.U.I.E."
-ALERT_EXPANSION_SIZE = 10  # "(Minimal Unified Incident Envelope)"
-ALERT_HEADER_SPACING = 2   # vertical padding around header lines (ALERT / type)
-ALERT_FOOTER_SPACING = 2   # vertical padding around footer lines (service/time, thanks, expansion)
+ALERT_SIZE = 46            # the big "ALERT" header
+ALERT_TYPE_SIZE = 24       # the severity type line
+ALERT_TEXT_SIZE = 32       # size of the alert message body (most important for legibility)
+ALERT_DASH_SIZE = 15       # size of the "- - -" dash rule
+ALERT_STAR_SIZE = 15       # size of the "* * *" star rule
+ALERT_FOOTER_SIZE = 22
+ALERT_THANKS_SIZE = 18     # "Thank you for using M.U.I.E."
+ALERT_EXPANSION_SIZE = 15  # "(Minimal Unified Incident Envelope)"
+ALERT_HEADER_SPACING = 4   # vertical padding around header lines (ALERT / type)
+ALERT_FOOTER_SPACING = 4   # vertical padding around footer lines (service/time, thanks, expansion)
 # Font per alert line, chosen by number (see _ALERT_FONT_FILES): 1=Jersey10 (default),
 # 2=built-in mono, 3=Jacquard12, 4=Doto. Missing font files fall back to the mono font.
 ALERT_FONT = 1
@@ -400,12 +400,17 @@ def _scale_to_width(img: Image.Image, w: int) -> Image.Image:
 def _image_field(payload: dict, w: int) -> Optional[Image.Image]:
     raw = payload.get("image_raw_bitmap")
     if raw:
-        img = Image.open(io.BytesIO(_decode_b64(raw)))
-        img = img.convert("1")           # printed as-is, no re-dither
+        try:
+            img = Image.open(io.BytesIO(_decode_b64(raw))).convert("1")  # printed as-is, no re-dither
+        except Exception as exc:
+            raise RenderError(f"Could not decode image_raw_bitmap: {exc}") from exc
         return _scale_to_width(img, w) if img.width != w else img
     std = payload.get("image")
     if std:
-        img = Image.open(io.BytesIO(_decode_b64(std))).convert("L")
+        try:
+            img = Image.open(io.BytesIO(_decode_b64(std))).convert("L")
+        except Exception as exc:
+            raise RenderError(f"Could not decode image (use PNG/JPEG): {exc}") from exc
         img = _scale_to_width(img, w)
         return img.convert("1")          # Floyd–Steinberg (Pillow default dither)
     return None

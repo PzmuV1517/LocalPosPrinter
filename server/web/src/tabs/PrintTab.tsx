@@ -84,8 +84,26 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
   function onImage(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) { setImageB64(null); return }
+    // Downscale in the browser to the print width before sending — keeps the payload tiny
+    // (avoids reverse-proxy body limits) and normalizes to PNG (the server re-dithers anyway).
     const r = new FileReader()
-    r.onload = () => setImageB64(r.result as string)
+    r.onload = () => {
+      const img = new Image()
+      img.onload = () => {
+        const maxW = 384
+        const scale = img.width > maxW ? maxW / img.width : 1
+        const cw = Math.max(1, Math.round(img.width * scale))
+        const ch = Math.max(1, Math.round(img.height * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = cw; canvas.height = ch
+        const ctx = canvas.getContext('2d')
+        if (!ctx) { setResult({ ok: false, text: 'Canvas not available' }); return }
+        ctx.drawImage(img, 0, 0, cw, ch)
+        setImageB64(canvas.toDataURL('image/png'))
+      }
+      img.onerror = () => setResult({ ok: false, text: 'Could not read that image — try a PNG or JPEG (HEIC isn’t supported by the browser).' })
+      img.src = r.result as string
+    }
     r.readAsDataURL(f)
   }
 
