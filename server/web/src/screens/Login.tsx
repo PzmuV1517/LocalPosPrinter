@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import * as api from '../api'
 
-export function Login({ onAuthed }: { onAuthed: (token: string) => void }) {
+export function Login({ onAuthed, reason }: { onAuthed: (token: string) => void; reason?: string }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [err, setErr] = useState('')
@@ -41,6 +41,7 @@ export function Login({ onAuthed }: { onAuthed: (token: string) => void }) {
               </div>
             )}
             <div className="err">{err}</div>
+            {reason && <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>diagnostic: {reason}</div>}
           </form>
         </div>
         <div className="gate-verse">

@@ -20,11 +20,13 @@ export const getToken = (): string | null => {
   return t
 }
 export const setToken = (t: string) => { localStorage.setItem(TOKEN_KEY, t); bridge()?.saveToken?.(t) }
-export const clearToken = () => {
+// Clear local token only (used on a transient 401 — must NOT revoke the server session).
+export const clearToken = () => { localStorage.removeItem(TOKEN_KEY); bridge()?.saveToken?.('') }
+// Explicit sign-out: revoke the server session too.
+export async function logout() {
   const t = localStorage.getItem(TOKEN_KEY)
-  if (t) fetch('/session/logout', { method: 'POST', headers: { Authorization: `Bearer ${t}` } }).catch(() => {})
-  localStorage.removeItem(TOKEN_KEY)
-  bridge()?.saveToken?.('')
+  if (t) { try { await fetch('/session/logout', { method: 'POST', headers: { Authorization: `Bearer ${t}` } }) } catch { /* ignore */ } }
+  clearToken()
 }
 
 /** Thrown on a 401 so the app can drop back to the login gate. */
