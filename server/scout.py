@@ -42,7 +42,48 @@ import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
-SCOUT_VERSION = "2.1.2"
+SCOUT_VERSION = "2.2.0"
+
+# journald PRIORITY (syslog) -> our severity names.
+_JOURNAL_SEV = {0: "emerg", 1: "alert", 2: "crit", 3: "err", 4: "warning", 5: "notice", 6: "info", 7: "debug"}
+
+
+def _collect_metrics() -> dict:
+    """Best-effort host health (Linux, stdlib only): load, mem%, disk%, temp°C."""
+    m = {}
+    try:
+        la = os.getloadavg()
+        m["load1"] = round(la[0], 2)
+        m["cpus"] = os.cpu_count() or 1
+    except (OSError, AttributeError):
+        pass
+    try:
+        info = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, _, v = line.partition(":")
+                info[k] = float(v.split()[0])
+        total, avail = info.get("MemTotal", 0), info.get("MemAvailable", 0)
+        if total:
+            m["mem_pct"] = round((1 - avail / total) * 100, 1)
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        s = os.statvfs("/")
+        used = (s.f_blocks - s.f_bfree) * s.f_frsize
+        total = s.f_blocks * s.f_frsize
+        if total:
+            m["disk_pct"] = round(used / total * 100, 1)
+    except OSError:
+        pass
+    for zone in ("/sys/class/thermal/thermal_zone0/temp",):
+        try:
+            with open(zone) as f:
+                m["temp_c"] = round(int(f.read().strip()) / 1000.0, 1)
+                break
+        except (OSError, ValueError):
+            pass
+    return m
 
 
 def _describe_error(e: Exception) -> str:
@@ -88,13 +129,16 @@ class Scout:
             "Content-Type": "application/json",
         }
 
-    def log(self, severity: str, message: str, service: str = "", meta: dict = None) -> dict:
+    def log(self, severity: str, message: str, service: str = "", meta: dict = None,
+            no_print: bool = False) -> dict:
         if severity not in SEVERITIES:
             severity = "info"
         path = "/ingest"
-        body = json.dumps(
-            {"severity": severity, "message": message, "service": service, "meta": meta or {}, "ts": time.time()}
-        ).encode()
+        payload = {"severity": severity, "message": message, "service": service,
+                   "meta": meta or {}, "ts": time.time()}
+        if no_print:
+            payload["no_print"] = True
+        body = json.dumps(payload).encode()
         req = urllib.request.Request(self.url + path, data=body, method="POST", headers=self._sign("POST", path, body))
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
@@ -116,9 +160,10 @@ class Scout:
 
     def poll(self, host: str, timeout: float = 35.0):
         """Long-poll the agent channel. Returns the next command dict, or None on timeout.
-        The poll itself is the heartbeat that keeps this device shown as online."""
+        The poll itself is the heartbeat that keeps this device shown as online, and carries
+        host health metrics for the dashboard."""
         path = "/agent/poll"
-        body = json.dumps({"version": SCOUT_VERSION, "host": host}).encode()
+        body = json.dumps({"version": SCOUT_VERSION, "host": host, "metrics": _collect_metrics()}).encode()
         req = urllib.request.Request(self.url + path, data=body, method="POST",
                                      headers=self._sign("POST", path, body))
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -142,6 +187,90 @@ def _self_update(scout: "Scout") -> None:
     os.execv(sys.executable, [sys.executable, path, "agent"])
 
 
+def _sevrank(name: str) -> int:
+    try:
+        return SEVERITIES.index(name)
+    except ValueError:
+        return SEVERITIES.index("info")
+
+
+def _run_command(scout: "Scout", command: str) -> None:
+    """Run a shell command from the dashboard; ship output back as a (no-print) log."""
+    import subprocess
+    try:
+        r = subprocess.run(command, shell=True, capture_output=True, text=True, timeout=120)
+        out = (r.stdout + r.stderr).strip()
+        sev = "info" if r.returncode == 0 else "warning"
+        scout.log(sev, f"$ {command}\n(exit {r.returncode})\n{out[:3000]}", service="scout.run",
+                  meta={"command": command, "exit": r.returncode}, no_print=True)
+    except Exception as e:
+        scout.log("warning", f"$ {command}\n[error] {e}", service="scout.run",
+                  meta={"command": command}, no_print=True)
+
+
+def _forward_journald(scout: "Scout", floor: str, no_print: bool) -> None:
+    import subprocess
+    try:
+        p = subprocess.Popen(["journalctl", "-f", "-n", "0", "-o", "json", "--no-pager"],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    except FileNotFoundError:
+        print("journalctl not found — journald forwarding disabled", file=sys.stderr)
+        return
+    for line in p.stdout:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        try:
+            prio = int(e.get("PRIORITY", 6))
+        except (TypeError, ValueError):
+            prio = 6
+        sev = _JOURNAL_SEV.get(prio, "info")
+        if _sevrank(sev) > _sevrank(floor):
+            continue
+        msg = e.get("MESSAGE", "")
+        if isinstance(msg, list):
+            try:
+                msg = bytes(msg).decode(errors="replace")
+            except (ValueError, TypeError):
+                msg = str(msg)
+        unit = e.get("_SYSTEMD_UNIT") or e.get("SYSLOG_IDENTIFIER") or "journald"
+        scout.log(sev, str(msg)[:2000], service=str(unit), no_print=no_print)
+
+
+def _forward_file(scout: "Scout", path: str, sev: str, floor: str, no_print: bool) -> None:
+    import subprocess
+    if _sevrank(sev) > _sevrank(floor):
+        return
+    try:
+        p = subprocess.Popen(["tail", "-F", "-n", "0", path],
+                             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    except FileNotFoundError:
+        return
+    svc = os.path.basename(path)
+    for line in p.stdout:
+        line = line.rstrip("\n")
+        if line:
+            scout.log(sev, line[:2000], service=svc, no_print=no_print)
+
+
+def _start_forwarders(scout: "Scout") -> list:
+    """Start journald/file forwarders (in daemon threads) per SCOUT_FORWARD_* env vars."""
+    import threading
+    floor = os.environ.get("SCOUT_FORWARD_MIN_SEV", "warning")
+    no_print = os.environ.get("SCOUT_FORWARD_NO_PRINT", "1") != "0"
+    started = []
+    if os.environ.get("SCOUT_FORWARD_JOURNALD", "0") == "1":
+        threading.Thread(target=_forward_journald, args=(scout, floor, no_print), daemon=True).start()
+        started.append("journald")
+    for spec in [s.strip() for s in os.environ.get("SCOUT_FORWARD_FILES", "").split(",") if s.strip()]:
+        path, _, sev = spec.rpartition(":") if ":" in spec else (spec, "", "info")
+        threading.Thread(target=_forward_file, args=(scout, path.strip(), (sev or "info").strip(), floor, no_print),
+                         daemon=True).start()
+        started.append(path.strip())
+    return started
+
+
 def run_agent(scout: "Scout") -> int:
     """Persistent daemon: long-poll for commands (heartbeat + remote update). Reconnects fast,
     and reports its own presence to Watchtower (service ``scout.agent``): a log on start (covers a
@@ -150,8 +279,12 @@ def run_agent(scout: "Scout") -> int:
     import socket
     host = socket.gethostname()
     print(f"scout agent {SCOUT_VERSION} -> {scout.url} as {scout.device_id} (host={host})")
-    scout.log("info", f"scout agent {SCOUT_VERSION} started on {host}", service="scout.agent",
-              meta={"event": "start"})
+    fwd = _start_forwarders(scout)
+    if fwd:
+        print(f"forwarding logs from: {', '.join(fwd)}")
+    scout.log("info", f"scout agent {SCOUT_VERSION} started on {host}"
+              + (f"; forwarding {', '.join(fwd)}" if fwd else ""), service="scout.agent",
+              meta={"event": "start", "forwarding": fwd})
     connected = True
     lost_at = 0.0
     last_error = ""
@@ -178,6 +311,9 @@ def run_agent(scout: "Scout") -> int:
                     scout.log("info", "scout agent restart requested from server", service="scout.agent",
                               meta={"event": "restart"})
                     os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), "agent"])
+                elif c == "run":
+                    print("run command received")
+                    _run_command(scout, cmd.get("command", ""))
                 elif c == "ping" and cmd.get("ack"):
                     # Manual ping — reply visibly. (Periodic pings omit "ack" and just refresh
                     # presence/version via this poll, so they don't flood the log stream.)

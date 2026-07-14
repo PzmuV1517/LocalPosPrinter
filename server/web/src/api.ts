@@ -79,6 +79,24 @@ export const updateScout = (device_id: string) => post<{ queued: number }>('/wat
 export const updateAllScouts = () => post<{ queued: number }>('/watchtower/devices/update', { all: true })
 export const pingScout = (device_id: string) => post<{ queued: number }>('/watchtower/devices/command', { device_id, cmd: 'ping' })
 export const restartScout = (device_id: string) => post<{ queued: number }>('/watchtower/devices/command', { device_id, cmd: 'restart' })
+export const runOnScout = (device_id: string, command: string) => post('/watchtower/devices/run', { device_id, command })
+export const setHeartbeat = (device_id: string, seconds: number) => post('/watchtower/devices/heartbeat', { device_id, seconds })
+export const metricsSeries = (hours: number) =>
+  post<{ start: number; width: number; buckets: number; err: number[]; other: number[] }>('/watchtower/metrics', { hours })
+export const testEmail = () => post<{ ok: boolean; message: string }>('/config/test-email', {})
+
+/** Trigger a CSV download of the current filtered logs. */
+export async function exportLogsCsv(filters: Record<string, unknown>) {
+  const res = await fetch('/watchtower/logs/export', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken() ?? ''}` },
+    body: JSON.stringify({ ...filters, format: 'csv' }),
+  })
+  if (!res.ok) return
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url; a.download = 'watchtower-logs.csv'; a.click()
+  URL.revokeObjectURL(url)
+}
 
 // ---- passwords / history ----
 export const adminState = () => post<{ history: HistoryRow[]; passwords: TempPassword[] }>('/admin/state', {})

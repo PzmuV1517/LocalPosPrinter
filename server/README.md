@@ -131,6 +131,37 @@ agent picks it up on its next poll (near-instant while connected), pulls the lat
 this server, and restarts itself. Since the server serves `scout.py` from its own checkout, run the
 server self-update first so scouts pull the newest `main`.
 
+Agents also report **host health** (disk/mem/load/temp — shown on the device card), obey **Ping**
+(visible pong), **Restart**, and **Run** (run a shell command; output comes back as a `scout.run`
+log). The dashboard's device card lets you set a **heartbeat interval** — the dead-man's-switch.
+
+### Forwarding logs from all services (journald / files)
+
+Set these in `~/.config/scout/scout.env` (then `systemctl --user restart scout-agent`):
+
+```bash
+SCOUT_FORWARD_JOURNALD=1                       # tail journald and ship entries
+SCOUT_FORWARD_MIN_SEV=warning                  # only warning+ (journald is noisy)
+SCOUT_FORWARD_FILES=/var/log/nginx/error.log:err,/var/log/app.log:warning
+SCOUT_FORWARD_NO_PRINT=1                        # forwarded logs never auto-print (default)
+```
+
+journald PRIORITY maps to severity; the service name is the systemd unit. (Reading journald may
+need the user in the `systemd-journal` group.)
+
+## Alerts, notifications & observability (dashboard)
+
+- **Dead-man's-switch** — give a device a heartbeat interval (Devices tab). If it stops reporting
+  for longer, Watchtower prints + emails a `crit` "device SILENT" alert, and a "recovered" note
+  when it returns.
+- **Disk-full alert** — Settings → *Disk-full alert at %*; scouts reporting disk over that threshold
+  trigger a print + email (deduped).
+- **Email** — Settings → *Notifications*: point it at your SMTP (e.g. `watchdog@andreibanu.com` →
+  `contact@andreibanu.com`); logs at the chosen severity or worse (plus silence/disk alerts) are
+  emailed. **Send test email** verifies it. Password stored encrypted.
+- **Error-rate chart** (24h) and clickable **log detail** (full meta) in the Logs tab; **Export CSV**
+  of the current filter; **per-severity retention** (keep errors longer than info).
+
 ## Pairing the printer app
 
 1. In **Devices**, *Issue device secret* for the printer (e.g. id `pos-front`). Copy the secret.

@@ -191,6 +191,36 @@ devs = client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()["
 assert any(d["id"] == "kitchen-pi" and d["meta"].get("scout_version") == "2.1.2" for d in devs)
 print("  ok  ping command delivered + scout version reported on poll")
 
+# ---- heartbeat (dead-man's-switch), run command, metrics on poll ----
+assert client.post("/watchtower/devices/heartbeat", json={"device_id": "kitchen-pi", "seconds": 60}, headers=AUTH).json()["ok"]
+mbody = json.dumps({"version": "2.2.0", "host": "h", "metrics": {"disk_pct": 42.0, "mem_pct": 55}}).encode()
+client.post("/agent/poll", data=mbody, headers=sign("POST", "/agent/poll", mbody))
+devs = client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()["devices"]
+kp = next(d for d in devs if d["id"] == "kitchen-pi")
+assert kp["heartbeat_secs"] == 60 and kp["meta"]["metrics"]["disk_pct"] == 42.0
+assert client.post("/watchtower/devices/run", json={"device_id": "kitchen-pi", "command": "uptime"}, headers=AUTH).json()["ok"]
+rbody = json.dumps({"version": "2.2.0", "host": "h"}).encode()
+assert client.post("/agent/poll", data=rbody, headers=sign("POST", "/agent/poll", rbody)).json()["cmd"] == {"cmd": "run", "command": "uptime"}
+print("  ok  heartbeat set, metrics stored, run command delivered")
+
+# ---- forwarded (no_print) err does not print ----
+b = json.dumps({"severity": "err", "message": "nginx 500", "service": "nginx", "no_print": True}).encode()
+r = client.post("/ingest", data=b, headers=sign("POST", "/ingest", b)).json()
+assert r["printed"] is False and r["would_print"] is False
+print("  ok  no_print err skips auto-print")
+
+# ---- metrics timeseries + CSV export + notify config ----
+ts = client.post("/watchtower/metrics", json={"hours": 24, "buckets": 24}, headers=AUTH).json()
+assert len(ts["err"]) == 24 and len(ts["other"]) == 24
+exp = client.post("/watchtower/logs/export", json={"format": "csv"}, headers=AUTH)
+assert exp.status_code == 200 and exp.headers["content-type"].startswith("text/csv") and "severity" in exp.text
+assert client.post("/config/set", json={"notify": {"enabled": True, "host": "smtp.x", "from_addr": "a@b",
+       "to_addr": "c@d", "min_sev": "crit", "port": 587, "password": "pw"}}, headers=AUTH).json()["ok"]
+n = client.post("/config/get", json={}, headers=AUTH).json()["notify"]
+assert n["enabled"] and n["host"] == "smtp.x" and n["has_password"] is True
+client.post("/config/set", json={"notify": {"enabled": False}}, headers=AUTH)  # off so no SMTP attempts later
+print("  ok  metrics timeseries + CSV export + notify config roundtrip")
+
 # ---- delete is refused for an active device, allowed once revoked ----
 resp = client.post("/watchtower/devices/create", json={"device_id": "tmp-dev"}, headers=AUTH)
 assert resp.status_code == 200

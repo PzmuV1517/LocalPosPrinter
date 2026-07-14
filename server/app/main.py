@@ -61,6 +61,8 @@ log = setup_logging(DATA_DIR, os.environ.get("LOG_LEVEL", "INFO"))
 box = crypto.SecretBox(DATA_DIR)
 db = Database(DATA_DIR, box, lookup_key=box.derive("temp-password-lookup"))
 auth = Auth(db, session_key=box.derive("session"), skew_secs=HMAC_SKEW_SECS)
+from .notify import Notifier  # noqa: E402  (after db/box exist)
+notifier = Notifier(db, box)
 
 # Bootstrap: a headless deploy can skip the wizard by providing BOTH a username and password in
 # the env. With only a password (or neither), the browser setup wizard runs on first visit.
@@ -105,6 +107,14 @@ def auto_print_fuse() -> int:
 
 def retention_days() -> int:
     return db.get_int("log_retention_days", _DEF_RETENTION)
+
+
+def err_retention_days() -> int:
+    return db.get_int("err_retention_days", 0)  # 0 = same as retention_days
+
+
+def disk_alert_pct() -> int:
+    return db.get_int("disk_alert_pct", 90)  # 0 disables
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +373,9 @@ async def config_get(request: Request) -> JSONResponse:
             "auto_print_min_sev": db.get_config("auto_print_min_sev", _DEF_MIN_SEV),
             "auto_print_max_per_min": auto_print_fuse(),
             "log_retention_days": retention_days(),
+            "err_retention_days": err_retention_days(),
+            "disk_alert_pct": disk_alert_pct(),
+            "notify": notifier.get_settings(),
         }
     )
 
@@ -380,6 +393,12 @@ async def config_set(request: Request) -> JSONResponse:
         db.set_config("auto_print_max_per_min", int(body["auto_print_max_per_min"]))
     if body.get("log_retention_days") is not None:
         db.set_config("log_retention_days", int(body["log_retention_days"]))
+    if body.get("err_retention_days") is not None:
+        db.set_config("err_retention_days", int(body["err_retention_days"]))
+    if body.get("disk_alert_pct") is not None:
+        db.set_config("disk_alert_pct", int(body["disk_alert_pct"]))
+    if isinstance(body.get("notify"), dict):
+        notifier.save_settings(body["notify"])
     # Changing credentials requires a valid session (already checked above).
     new_user = (body.get("new_master_username") or "").strip()
     if new_user:
@@ -392,6 +411,16 @@ async def config_set(request: Request) -> JSONResponse:
         auth.set_password(new_pw)
         log.info("Master password changed via Settings from %s", _client_ip(request))
     return JSONResponse({"ok": True})
+
+
+@app.post("/config/test-email")
+async def config_test_email(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    ok, msg = await asyncio.to_thread(
+        notifier.send, "[Watchtower] test email", "This is a test from Watchtower notifications.")
+    return JSONResponse({"ok": ok, "message": msg})
 
 
 # ---------------------------------------------------------------------------
@@ -629,6 +658,33 @@ def _log_to_alert_payload(device_id: str, severity: str, service: str, message: 
     }
 
 
+# Dedup so a flapping condition doesn't spam email/print repeatedly.
+_recent_alerts: dict[str, float] = {}
+# Devices currently flagged silent by the dead-man's-switch (so we alert once, not every check).
+_silent_devices: set[str] = set()
+
+
+def _dedup_ok(key: str, window: float = 300.0) -> bool:
+    now = time.time()
+    if now - _recent_alerts.get(key, 0.0) < window:
+        return False
+    _recent_alerts[key] = now
+    return True
+
+
+async def _maybe_email(device_id: str, severity: str, service: str, message: str) -> None:
+    """Email the operator if notifications are on and severity meets the floor (deduped)."""
+    st = notifier.get_settings()
+    if not st["enabled"] or sev_num(severity) > sev_num(st["min_sev"]):
+        return
+    if not _dedup_ok(f"email:{device_id}:{service}:{message}"):
+        return
+    subject = f"[Watchtower] {severity.upper()} {device_id}" + (f"/{service}" if service else "")
+    ok, err = await asyncio.to_thread(notifier.send, subject, f"{device_id}/{service}\n\n{message}")
+    if not ok:
+        log.warning("Email notify failed: %s", err)
+
+
 @app.post("/agent/poll")
 async def agent_poll(request: Request) -> JSONResponse:
     """Scout agent heartbeat + command channel (HMAC). Held open until a command is queued
@@ -642,10 +698,36 @@ async def agent_poll(request: Request) -> JSONResponse:
         meta["scout_version"] = str(body["version"])
     if body.get("host"):
         meta["host"] = str(body["host"])
+    metrics = body.get("metrics") if isinstance(body.get("metrics"), dict) else None
+    if metrics:
+        meta["metrics"] = metrics  # cpu/mem/disk/temp — shown on the device card
     if meta:
         db.touch_device(device_id, meta=meta)
+    # Disk-full alert (print + email), deduped.
+    if metrics and disk_alert_pct() > 0:
+        try:
+            disk = float(metrics.get("disk_pct"))
+        except (TypeError, ValueError):
+            disk = -1
+        if disk >= disk_alert_pct() and _dedup_ok(f"disk:{device_id}", window=1800):
+            msg = f"disk at {disk:.0f}% (threshold {disk_alert_pct()}%)"
+            await _fire_alert(device_id, "crit", "host.disk", msg)
     cmd = await agents.wait(device_id, timeout=25.0)
     return JSONResponse({"cmd": cmd})
+
+
+async def _fire_alert(device_id: str, severity: str, service: str, message: str) -> None:
+    """Print (respecting the fuse) AND email an internally-generated alert (silence, disk, …)."""
+    try:
+        if _auto_print_allowed():
+            payload = _log_to_alert_payload(device_id, severity, service, message, time.time())
+            if await _render_and_submit(payload):
+                _auto_print_times.append(time.time())
+    except Exception as exc:
+        log.error("Alert print failed (%s/%s): %s", device_id, service, exc)
+    db.add_log(device_id=device_id, severity=severity, message=message, service=service,
+               meta={"generated": True}, source_ip="watchtower")
+    await _maybe_email(device_id, severity, service, message)
 
 
 @app.post("/ingest")
@@ -661,8 +743,10 @@ async def ingest(request: Request) -> JSONResponse:
     message = str(body.get("message") or body.get("text") or "")
     service = str(body.get("service") or "")
     meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
+    # Forwarded logs / command output set no_print so they don't spew paper.
+    no_print = bool(body.get("no_print") or body.get("auto_print") is False)
 
-    should_print = sev_num(severity) <= auto_print_max_num()
+    should_print = sev_num(severity) <= auto_print_max_num() and not no_print
     printed = False
     if should_print and _auto_print_allowed():
         try:
@@ -677,6 +761,7 @@ async def ingest(request: Request) -> JSONResponse:
 
     log_id = db.add_log(device_id=device_id, severity=severity, message=message, service=service,
                         meta=meta, source_ip=_client_ip(request), printed=printed)
+    await _maybe_email(device_id, severity, service, message)
     log.info("Ingest #%d [%s] %s/%s printed=%s", log_id, severity, device_id, service, printed)
     return JSONResponse({"ok": True, "id": log_id, "printed": printed, "would_print": should_print})
 
@@ -806,6 +891,78 @@ async def watchtower_devices_command(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "queued": n})
 
 
+@app.post("/watchtower/devices/run")
+async def watchtower_devices_run(request: Request) -> JSONResponse:
+    """Run a shell command on a scout agent; it ships stdout/stderr/exit back as a log
+    (service ``scout.run``, no auto-print). Powerful — operator (session) only."""
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    device_id = (body.get("device_id") or "").strip()
+    command = (body.get("command") or "").strip()
+    if not device_id or not command:
+        return JSONResponse({"error": "device_id and command required"}, status_code=400)
+    agents.queue(device_id, {"cmd": "run", "command": command})
+    log.info("Queued run on %s: %s", device_id, command[:120])
+    return JSONResponse({"ok": True})
+
+
+@app.post("/watchtower/devices/heartbeat")
+async def watchtower_devices_heartbeat(request: Request) -> JSONResponse:
+    """Set a device's expected reporting interval (seconds) for the dead-man's-switch. 0 disables."""
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    device_id = (body.get("device_id") or "").strip()
+    try:
+        seconds = int(body.get("seconds", 0))
+    except (TypeError, ValueError):
+        return JSONResponse({"error": "seconds must be a number"}, status_code=400)
+    if not db.set_heartbeat(device_id, seconds):
+        return JSONResponse({"error": "Device not found"}, status_code=404)
+    _silent_devices.discard(device_id)  # reset alert state
+    return JSONResponse({"ok": True})
+
+
+@app.post("/watchtower/metrics")
+async def watchtower_metrics(request: Request) -> JSONResponse:
+    """Time-bucketed error/other counts for the dashboard chart."""
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    hours = int(body.get("hours", 24))
+    return JSONResponse(db.severity_timeseries(hours=hours, buckets=int(body.get("buckets", 48))))
+
+
+@app.post("/watchtower/logs/export")
+async def watchtower_logs_export(request: Request):
+    """Export the current filtered logs as CSV or JSON."""
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    max_sev = body.get("max_sev")
+    rows = db.list_logs(
+        limit=int(body.get("limit", 5000)),
+        max_sev=sev_num(max_sev) if max_sev else None,
+        device_id=body.get("device_id") or None,
+        service=body.get("service") or None,
+        search=(body.get("search") or "").strip() or None,
+    )
+    if (body.get("format") or "csv") == "json":
+        return JSONResponse(rows)
+    import csv
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["ts", "iso", "severity", "device_id", "service", "message", "printed"])
+    import datetime
+    for r in rows:
+        w.writerow([r["ts"], datetime.datetime.fromtimestamp(r["ts"]).isoformat(timespec="seconds"),
+                    r["severity"], r["device_id"], r["service"], r["message"], int(r["printed"])])
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                   headers={"Content-Disposition": "attachment; filename=watchtower-logs.csv"})
+
+
 @app.post("/watchtower/devices/delete")
 async def watchtower_devices_delete(request: Request) -> JSONResponse:
     _, body = await _read(request)
@@ -886,7 +1043,7 @@ async def messages(ws: WebSocket) -> None:
 # ---------------------------------------------------------------------------
 @app.on_event("startup")
 async def _startup() -> None:
-    removed = db.prune_logs(retention_days())
+    removed = db.prune_logs(retention_days(), err_retention_days())
     if removed:
         log.info("Pruned %d logs older than %d days", removed, retention_days())
 
@@ -894,11 +1051,36 @@ async def _startup() -> None:
         while True:
             await asyncio.sleep(6 * 3600)
             try:
-                n = db.prune_logs(retention_days())
+                n = db.prune_logs(retention_days(), err_retention_days())
                 if n:
                     log.info("Pruned %d expired logs", n)
             except Exception as exc:
                 log.error("Log prune failed: %s", exc)
+
+    async def _watchdog() -> None:
+        # Dead-man's-switch: alert once when a device with a heartbeat interval goes silent,
+        # and again (recovery) when it returns.
+        while True:
+            await asyncio.sleep(30)
+            try:
+                now = time.time()
+                for d in db.list_devices():
+                    hb = d.get("heartbeat_secs") or 0
+                    if d["revoked"] or hb <= 0:
+                        continue
+                    last = d["last_seen_at"] or 0
+                    silent = (now - last) > hb
+                    was = d["id"] in _silent_devices
+                    if silent and not was:
+                        _silent_devices.add(d["id"])
+                        ago = int(now - last) if last else -1
+                        await _fire_alert(d["id"], "crit", "watchtower.silence",
+                                          f"device SILENT — no report for {ago}s (expected every {hb}s)")
+                    elif not silent and was:
+                        _silent_devices.discard(d["id"])
+                        await _fire_alert(d["id"], "notice", "watchtower.silence", "device recovered — reporting again")
+            except Exception as exc:
+                log.error("Watchdog failed: %s", exc)
 
     async def _pinger() -> None:
         # Periodically ping online agents so their presence + reported version stay fresh.
@@ -914,6 +1096,7 @@ async def _startup() -> None:
 
     asyncio.create_task(_pruner())
     asyncio.create_task(_pinger())
+    asyncio.create_task(_watchdog())
     log.info("Watchtower up. configured=%s auto-print<=%s fuse=%d/min retention=%dd",
              db.is_configured(), db.get_config("auto_print_min_sev", _DEF_MIN_SEV),
              auto_print_fuse(), retention_days())

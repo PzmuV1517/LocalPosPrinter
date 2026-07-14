@@ -76,6 +76,14 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
     const d = await guard(api.restartScout(id))
     if (d) alert(`Restart queued for ${id}. Applies on its next poll.`)
   }
+  async function setHb(id: string, secs: number) {
+    await guard(api.setHeartbeat(id, secs)); load()
+    alert(secs > 0 ? `Dead-man's-switch set: alert if ${id} is silent for ${secs}s.` : `Silence alerts disabled for ${id}.`)
+  }
+  async function runCmd(id: string, command: string) {
+    const d = await guard(api.runOnScout(id, command))
+    if (d) alert(`Running on ${id}. Output appears in Logs (service "scout.run") once the agent picks it up.`)
+  }
 
   return (
     <>
@@ -84,12 +92,13 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
           <h2 style={{ margin: 0 }}>Registered devices</h2>
           <button className="ghost mini" onClick={updateAll}>Update all scouts</button>
         </div>
-        <div className="cards" style={{ marginTop: 12 }}>
+        <div className="cards" style={{ marginTop: 12, gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
           {devices.length
             ? devices.map((d) => <DeviceCard key={d.id} d={d} counts={counts}
               actions={{
                 onRotate: () => rotate(d.id), onRevoke: () => revoke(d.id), onDelete: () => del(d.id),
                 onUpdate: () => update(d.id), onPing: () => ping(d.id), onRestart: () => restartAgent(d.id),
+                onSetHeartbeat: (s) => setHb(d.id, s), onRun: (c) => runCmd(d.id, c),
               }} />)
             : <div className="muted" style={{ fontSize: 12 }}>No devices yet.</div>}
         </div>

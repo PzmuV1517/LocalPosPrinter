@@ -62,18 +62,34 @@ export function SevPills({ sevs }: { sevs: Partial<Record<Severity, number>> }) 
   )
 }
 
+interface DeviceActions {
+  onRotate: () => void; onRevoke: () => void; onDelete: () => void
+  onUpdate: () => void; onPing: () => void; onRestart: () => void
+  onSetHeartbeat: (secs: number) => void; onRun: (cmd: string) => void
+}
+
+function HostMetrics({ m }: { m: Record<string, unknown> }) {
+  const num = (k: string) => (typeof m[k] === 'number' ? (m[k] as number) : undefined)
+  const disk = num('disk_pct'), mem = num('mem_pct'), load = num('load1'), temp = num('temp_c')
+  if (disk === undefined && mem === undefined && load === undefined) return null
+  return (
+    <div className="metrics">
+      {disk !== undefined && <span className={disk >= 90 ? 'warn' : ''}>disk <b>{disk}%</b></span>}
+      {mem !== undefined && <span>mem <b>{mem}%</b></span>}
+      {load !== undefined && <span>load <b>{load}</b></span>}
+      {temp !== undefined && <span>temp <b>{temp}°C</b></span>}
+    </div>
+  )
+}
+
 export function DeviceCard(
-  { d, counts, actions }: {
-    d: Device; counts: SevCounts;
-    actions?: {
-      onRotate: () => void; onRevoke: () => void; onDelete: () => void;
-      onUpdate: () => void; onPing: () => void; onRestart: () => void
-    }
-  },
+  { d, counts, actions }: { d: Device; counts: SevCounts; actions?: DeviceActions },
 ) {
-  // A live agent (long-poll heartbeat) is the strongest signal; else fall back to last-seen.
   const online = d.agent_online || (!!d.last_seen_at && Date.now() / 1000 - d.last_seen_at < 120)
   const version = (d.meta?.scout_version as string) || ''
+  const [hb, setHb] = useState(String(d.heartbeat_secs || 0))
+  const [cmd, setCmd] = useState('')
+  const metrics = (d.meta?.metrics as Record<string, unknown>) || {}
   return (
     <div className="device">
       <div className="name">{d.name || d.id} {d.revoked && <span className="pill bad">revoked</span>}</div>
@@ -83,7 +99,21 @@ export function DeviceCard(
         {d.agent_online ? 'agent online' : online ? 'online' : 'offline'} · {d.last_seen_at ? fmtTime(d.last_seen_at) : 'never'}
         {version && <> · scout {version}</>}
       </div>
+      <HostMetrics m={metrics} />
       <div className="sevs"><SevPills sevs={counts[d.id] || {}} /></div>
+      {actions && !d.revoked && <>
+        <div className="devctl">
+          <span className="muted" style={{ fontSize: 11 }}>heartbeat</span>
+          <input value={hb} onChange={(e) => setHb(e.target.value)} style={{ width: 60 }} />
+          <span className="muted" style={{ fontSize: 11 }}>s</span>
+          <button className="ghost mini" onClick={() => actions.onSetHeartbeat(parseInt(hb, 10) || 0)}>set</button>
+        </div>
+        <div className="devctl">
+          <input value={cmd} placeholder="shell command…" onChange={(e) => setCmd(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && cmd.trim()) { actions.onRun(cmd.trim()); setCmd('') } }} />
+          <button className="ghost mini" onClick={() => { if (cmd.trim()) { actions.onRun(cmd.trim()); setCmd('') } }}>run</button>
+        </div>
+      </>}
       {actions && (
         <div className="actions" style={{ flexWrap: 'wrap' }}>
           {!d.revoked && <>

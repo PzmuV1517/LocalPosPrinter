@@ -58,13 +58,14 @@ class Database:
             self._conn.executescript(
                 """
                 CREATE TABLE IF NOT EXISTS devices (
-                    id           TEXT PRIMARY KEY,
-                    name         TEXT DEFAULT '',
-                    secret_enc   TEXT NOT NULL,
-                    created_at   REAL NOT NULL,
-                    last_seen_at REAL,
-                    meta_json    TEXT DEFAULT '{}',
-                    revoked      INTEGER DEFAULT 0
+                    id            TEXT PRIMARY KEY,
+                    name          TEXT DEFAULT '',
+                    secret_enc    TEXT NOT NULL,
+                    created_at    REAL NOT NULL,
+                    last_seen_at  REAL,
+                    meta_json     TEXT DEFAULT '{}',
+                    heartbeat_secs INTEGER DEFAULT 0,
+                    revoked       INTEGER DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS logs (
@@ -115,6 +116,10 @@ class Database:
                 );
                 """
             )
+            # Add columns that may be missing on databases created by older versions.
+            cols = {r["name"] for r in self._conn.execute("PRAGMA table_info(devices)")}
+            if "heartbeat_secs" not in cols:
+                self._conn.execute("ALTER TABLE devices ADD COLUMN heartbeat_secs INTEGER DEFAULT 0")
             self._conn.commit()
 
     # ---- config (web-driven setup; persists across pulls/updates) ----
@@ -226,6 +231,15 @@ class Database:
                 )
             self._conn.commit()
 
+    def set_heartbeat(self, device_id: str, seconds: int) -> bool:
+        """Expected reporting interval for the dead-man's-switch. 0 disables it."""
+        with self._lock:
+            cur = self._conn.execute(
+                "UPDATE devices SET heartbeat_secs=? WHERE id=?", (max(0, int(seconds)), device_id)
+            )
+            self._conn.commit()
+            return bool(cur.rowcount)
+
     def revoke_device(self, device_id: str) -> bool:
         with self._lock:
             cur = self._conn.execute("UPDATE devices SET revoked=1 WHERE id=?", (device_id,))
@@ -246,7 +260,8 @@ class Database:
     def list_devices(self) -> List[dict]:
         with self._lock:
             rows = self._conn.execute(
-                "SELECT id,name,created_at,last_seen_at,meta_json,revoked FROM devices ORDER BY created_at DESC"
+                "SELECT id,name,created_at,last_seen_at,meta_json,heartbeat_secs,revoked "
+                "FROM devices ORDER BY created_at DESC"
             ).fetchall()
         out = []
         for r in rows:
@@ -257,6 +272,7 @@ class Database:
                     "created_at": r["created_at"],
                     "last_seen_at": r["last_seen_at"],
                     "meta": json.loads(r["meta_json"] or "{}"),
+                    "heartbeat_secs": r["heartbeat_secs"] or 0,
                     "revoked": bool(r["revoked"]),
                 }
             )
@@ -364,14 +380,47 @@ class Database:
             "ts": r["ts"],
         }
 
-    def prune_logs(self, retention_days: int) -> int:
-        if retention_days <= 0:
+    def prune_logs(self, retention_days: int, err_retention_days: int = 0) -> int:
+        """Delete old logs. Non-error logs (sev_num > 3) go after [retention_days]; errors
+        (sev_num <= 3) are kept for [err_retention_days] if that's larger (per-severity retention)."""
+        if retention_days <= 0 and err_retention_days <= 0:
             return 0
-        cutoff = time.time() - retention_days * 86400
+        now = time.time()
+        removed = 0
         with self._lock:
-            cur = self._conn.execute("DELETE FROM logs WHERE ts < ?", (cutoff,))
+            if retention_days > 0:
+                cur = self._conn.execute(
+                    "DELETE FROM logs WHERE sev_num > 3 AND ts < ?", (now - retention_days * 86400,))
+                removed += cur.rowcount
+                # If errors aren't kept longer, prune them on the same schedule.
+                if err_retention_days <= 0:
+                    cur = self._conn.execute(
+                        "DELETE FROM logs WHERE sev_num <= 3 AND ts < ?", (now - retention_days * 86400,))
+                    removed += cur.rowcount
+            if err_retention_days > 0:
+                cur = self._conn.execute(
+                    "DELETE FROM logs WHERE sev_num <= 3 AND ts < ?", (now - err_retention_days * 86400,))
+                removed += cur.rowcount
             self._conn.commit()
-            return cur.rowcount
+        return removed
+
+    def severity_timeseries(self, hours: int = 24, buckets: int = 48) -> dict:
+        """Counts of errors (sev<=3) and everything else per time bucket, for the chart."""
+        now = time.time()
+        span = hours * 3600
+        start = now - span
+        width = span / buckets
+        errs = [0] * buckets
+        other = [0] * buckets
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT ts, sev_num FROM logs WHERE ts >= ?", (start,)).fetchall()
+        for r in rows:
+            i = int((r["ts"] - start) / width)
+            if i < 0 or i >= buckets:
+                continue
+            (errs if r["sev_num"] <= 3 else other)[i] += 1
+        return {"start": start, "width": width, "buckets": buckets, "err": errs, "other": other}
 
     # ---- nonces (HMAC replay protection) ----
     def use_nonce(self, nonce: str, ttl: float) -> bool:

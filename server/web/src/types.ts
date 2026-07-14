@@ -22,6 +22,7 @@ export interface Device {
   meta: Record<string, unknown>
   revoked: boolean
   agent_online?: boolean
+  heartbeat_secs?: number
 }
 
 export type SevCounts = Record<string, Partial<Record<Severity, number>>>
@@ -50,12 +51,27 @@ export interface HistoryRow {
   status: string
 }
 
+export interface NotifySettings {
+  enabled: boolean
+  host: string
+  port: number
+  security: string
+  username: string
+  from_addr: string
+  to_addr: string
+  min_sev: Severity
+  has_password: boolean
+}
+
 export interface ServerConfig {
   username: string
   print_width: number
   auto_print_min_sev: Severity
   auto_print_max_per_min: number
   log_retention_days: number
+  err_retention_days: number
+  disk_alert_pct: number
+  notify: NotifySettings
 }
 
 export interface UpdateResult {
