@@ -92,7 +92,10 @@ class Auth:
         return token
 
     def verify_session(self, token: Optional[str]) -> bool:
-        return bool(token) and self.db.session_valid(token)
+        # Only the dashboard/admin session counts as an authenticated operator. Confer participant
+        # logins live in the same sessions table tagged ``confer:<id>`` — they must NOT pass here,
+        # or a chat account could reach admin endpoints.
+        return bool(token) and self.db.session_sub(token) == "admin"
 
     def logout(self, token: Optional[str]) -> None:
         if token:

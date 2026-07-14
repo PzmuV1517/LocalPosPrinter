@@ -55,6 +55,10 @@ class Relay:
         """A print target is available: a client for this device that is NOT in Confer mode."""
         return any(c.device_id == device_id and not c.confer for c in self.clients)
 
+    def any_confer(self) -> bool:
+        """True if any connected printer has announced it is in Confer mode (for the status badge)."""
+        return any(c.confer for c in self.clients)
+
     async def set_confer_mode(self, client: Client, on: bool) -> None:
         """Toggle a connected printer between Confer and Print mode. Returning to Print flushes
         anything that queued while it was chatting."""

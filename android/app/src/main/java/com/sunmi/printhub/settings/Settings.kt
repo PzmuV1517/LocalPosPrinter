@@ -101,6 +101,17 @@ class Settings(context: Context) {
     }
 
     // ---- Confer (private chat) — token persists so the user stays logged in across restarts ----
+    // The Confer server is configured separately from the internet listener: chat can live on a
+    // communally-agreed Watchtower that is a different machine than the one handling prints/logs.
+    // Blank falls back to the internet-listener domain (the common single-server case).
+    var conferServer: String
+        get() = prefs.getString(K_CONFER_SERVER, "") ?: ""
+        set(v) = prefs.edit().putString(K_CONFER_SERVER, v.trim()).apply()
+
+    /** The Confer server actually used: the explicit field, or the internet domain if unset. */
+    val conferServerEffective: String
+        get() = conferServer.ifBlank { internetDomain }
+
     var conferToken: String
         get() = prefs.getString(K_CONFER_TOKEN, "") ?: ""
         set(v) = prefs.edit().putString(K_CONFER_TOKEN, v).apply()
@@ -148,6 +159,7 @@ class Settings(context: Context) {
         private const val K_NET_DOMAIN = "internet_domain"
         private const val K_DEVICE_ID = "device_id"
         private const val K_DEVICE_SECRET = "device_secret"
+        private const val K_CONFER_SERVER = "confer_server"
         private const val K_CONFER_TOKEN = "confer_token"
         private const val K_CONFER_USER = "confer_username"
         private const val K_CONFER_DISPLAY = "confer_display"

@@ -296,7 +296,9 @@ async def status(request: Request) -> JSONResponse:
             "pending_jobs": sum(len(q) for q in relay.pending.values()),
             "print_width": print_width(),
             # A printer that switched to chat isn't offline — surface it as "in Confer mode".
-            "confer_mode": confer_hub.printer_in_confer_mode(),
+            # Driven by the mode announcement on the print socket (works even when the Confer
+            # server is a different machine). Presence lists who's on THIS server's Confer channel.
+            "confer_mode": relay.any_confer(),
             "confer_presence": confer_hub.presence(),
         }
     )
@@ -1483,13 +1485,10 @@ async def messages(ws: WebSocket) -> None:
     client = await relay.register(ws, "default")
     log.info("Printer device connected: %s", auth_id)
 
-    # A printer can switch this same socket into Confer mode. While it's a Confer participant the
-    # relay stops sending it print jobs (they queue), and it's shown as "in Confer mode".
-    confer_conn: "ConferConn | None" = None
-
-    async def _send_json(frame: dict) -> None:
-        await ws.send_text(json.dumps(frame))
-
+    # This socket carries print jobs (and only the Confer *mode switch*). The chat itself rides a
+    # separate /confer/ws connection to whichever Confer server the printer is configured for — so
+    # the Confer server and this print/internet-listener server can be different machines. A "mode:
+    # confer" announcement here just pauses print jobs and flips this server's badge to "in Confer".
     try:
         while True:
             text = await ws.receive_text()
@@ -1499,71 +1498,75 @@ async def messages(ws: WebSocket) -> None:
                 continue
             if not isinstance(frame, dict):
                 continue
-            ftype = frame.get("type")
-            if ftype == "confer_hello":
-                uid = confer_sessions.resolve(frame.get("token"))
-                user = db.confer_get_user(uid) if uid else None
-                if not user:
-                    await _send_json({"type": "confer_error", "error": "auth"})
-                    continue
-                if confer_conn is None:
-                    confer_conn = ConferConn(send=_send_json, user_id=user["id"],
-                                             username=user["username"], display=user["display_name"])
-                    await confer_hub.register(confer_conn)
+            if frame.get("type") == "mode":
+                mode = frame.get("mode")
+                if mode == "confer":
                     await relay.set_confer_mode(client, True)
-                    log.info("Printer %s entered Confer mode as %s", auth_id, user["username"])
-                    await _send_json({"type": "confer_ready", "user": user})
-                    await confer_hub.deliver_catchup(confer_conn)
-            elif ftype == "mode" and frame.get("mode") == "print":
-                if confer_conn is not None:
-                    await confer_hub.unregister(confer_conn)
-                    confer_conn = None
+                    log.info("Printer %s announced Confer mode", auth_id)
+                elif mode == "print":
                     await relay.set_confer_mode(client, False)
                     log.info("Printer %s returned to Print mode", auth_id)
-            elif ftype == "read" and confer_conn is not None:
-                db.confer_set_read(confer_conn.user_id, int(frame.get("chat_id") or 0),
-                                   int(frame.get("last_msg_id") or 0))
             # Any other frame is ignored (kept for forward-compat).
     except WebSocketDisconnect:
         pass
     except Exception:
         pass
     finally:
-        if confer_conn is not None:
-            await confer_hub.unregister(confer_conn)
         await relay.unregister(client)
         log.info("Printer device disconnected: %s", auth_id)
 
 
 # ---------------------------------------------------------------------------
-# WebSocket — Confer live push for the web admin (dashboard session token)
+# WebSocket — Confer live channel. Accepts EITHER a dashboard session token (the web admin) OR a
+# Confer participant token (a printer chatting on this server). Both register with the hub and
+# receive live fan-out; participants also get offline catch-up and may send read receipts.
 # ---------------------------------------------------------------------------
 @app.websocket("/confer/ws")
 async def confer_ws(ws: WebSocket) -> None:
-    # The dashboard passes its session token as a query param (WS can't set Authorization easily).
     token = ws.query_params.get("token")
-    if not auth.verify_session(token):
-        await ws.close(code=4401)
-        return
+    is_admin = auth.verify_session(token)
+    user = None
+    if not is_admin:
+        uid = confer_sessions.resolve(token)
+        user = db.confer_get_user(uid) if uid else None
+        if not user:
+            await ws.close(code=4401)
+            return
     await ws.accept()
 
     async def _send_json(frame: dict) -> None:
         await ws.send_text(json.dumps(frame))
 
-    conn = ConferConn(send=_send_json, user_id=None, username="admin", display="Admin", is_admin=True)
+    conn = ConferConn(
+        send=_send_json,
+        user_id=None if is_admin else user["id"],
+        username="admin" if is_admin else user["username"],
+        display="Admin" if is_admin else user["display_name"],
+        is_admin=is_admin,
+    )
     await confer_hub.register(conn)
-    log.info("Confer admin channel connected")
+    log.info("Confer channel connected: %s", "admin" if is_admin else user["username"])
+    if not is_admin:
+        await confer_hub.deliver_catchup(conn)
     try:
         while True:
-            # Push-only channel; the admin sends via REST. Reads keep the socket alive.
-            await ws.receive_text()
+            text = await ws.receive_text()
+            # Participants send read receipts to advance their offline-catch-up high-water mark.
+            if conn.user_id is not None:
+                try:
+                    f = json.loads(text)
+                    if isinstance(f, dict) and f.get("type") == "read":
+                        db.confer_set_read(conn.user_id, int(f.get("chat_id") or 0),
+                                           int(f.get("last_msg_id") or 0))
+                except (ValueError, TypeError):
+                    pass
     except WebSocketDisconnect:
         pass
     except Exception:
         pass
     finally:
         await confer_hub.unregister(conn)
-        log.info("Confer admin channel disconnected")
+        log.info("Confer channel disconnected: %s", "admin" if is_admin else user["username"])
 
 
 # ---------------------------------------------------------------------------

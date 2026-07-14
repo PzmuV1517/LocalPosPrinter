@@ -107,13 +107,8 @@ class InternetListener(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                // Confer frames are tagged with a "type" of confer_*; route those to the chat brain.
-                // Everything else is a trusted (HMAC-authenticated) print job.
-                val frame = try { org.json.JSONObject(text) } catch (_: Throwable) { null }
-                if (frame != null && frame.optString("type").startsWith("confer")) {
-                    ConferManager.onFrame(frame)
-                    return
-                }
+                // This socket carries trusted (HMAC-authenticated) print jobs. Confer chat rides a
+                // separate ConferSocket to the configured Confer server, not this channel.
                 if (text.contains("\"format\"") || text.contains("\"image")) {
                     PrintDispatcher.dispatchJson(
                         text, JobSource.INTERNET, requirePassword = false, sourceInfo = "internet"

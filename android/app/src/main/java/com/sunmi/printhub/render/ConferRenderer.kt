@@ -87,6 +87,23 @@ object ConferRenderer {
         return stack(listOf(nameBmp, gtBmp, printable), w)
     }
 
+    /** A terminal-style banner printed when a chat is opened, to head its paper transcript. */
+    fun transcriptStart(chatName: String, w: Int): Bitmap {
+        val inner = (w - 2 * PAD).toInt().coerceAtLeast(1)
+        val rule = block(layout(slashRule(inner), textPaint(20f, true), inner, Layout.Alignment.ALIGN_CENTER), w, 12f, 0f)
+        val head = block(layout("//// TRANSCRIPT START ////", textPaint(28f, true), inner, Layout.Alignment.ALIGN_CENTER), w, 2f, 0f)
+        val name = block(layout(chatName, textPaint(36f, true), inner, Layout.Alignment.ALIGN_CENTER), w, 2f, 2f)
+        val rule2 = block(layout(slashRule(inner), textPaint(20f, true), inner, Layout.Alignment.ALIGN_CENTER), w, 0f, 12f)
+        return stack(listOf(rule, head, name, rule2), w)
+    }
+
+    private fun slashRule(innerPx: Int): String {
+        val paint = textPaint(20f, true)
+        val cw = paint.measureText("/").coerceAtLeast(1f)
+        val cols = (innerPx / cw).toInt().coerceIn(8, 64)
+        return "/".repeat(cols)
+    }
+
     /** A labelled separator rule printed when the active/subscribed chat changes (screen off). */
     fun separator(chatName: String, w: Int): Bitmap {
         val paint = textPaint(SEP_SIZE, true)

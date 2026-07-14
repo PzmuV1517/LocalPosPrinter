@@ -122,7 +122,7 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
     private fun setupConfer() {
         binding.messagesList.layoutManager = LinearLayoutManager(this).apply { stackFromEnd = true }
         binding.messagesList.adapter = conferAdapter
-        binding.conferServerHint.text = "Server: " + Hub.settings.internetDomain.ifBlank { "(set the internet domain in Settings)" }
+        binding.conferServerHint.text = "Server: " + Hub.settings.conferServerEffective.ifBlank { "(set a Confer server in Settings)" }
 
         binding.conferLoginBtn.setOnClickListener { doConferLogin() }
         binding.conferLogoutBtn.setOnClickListener {

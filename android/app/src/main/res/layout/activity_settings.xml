@@ -115,6 +115,19 @@
             android:layout_marginTop="4dp"
             android:textStyle="bold" />
 
+        <!-- Confer chat server -->
+        <TextView style="@style/SectionHeader" android:text="Confer chat server" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="The communally-agreed server that hosts Confer chat. Leave blank to use the internet-listener domain above. Sign in with your Confer account on the Confer tab."
+            android:textSize="12sp"
+            android:layout_marginBottom="4dp" />
+
+        <EditText android:id="@+id/conferServerInput" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:hint="Confer server (blank = same as above)" android:inputType="textUri" />
+
         <!-- Watchtower (HMAC device identity) -->
         <TextView style="@style/SectionHeader" android:text="Watchtower pairing" />
 

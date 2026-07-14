@@ -6,6 +6,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.util.Log
 import com.sunmi.printhub.net.ConferApi
+import com.sunmi.printhub.net.ConferSocket
 import com.sunmi.printhub.render.ConferRenderer
 import com.sunmi.printhub.render.ImageUtils
 import org.json.JSONArray
@@ -60,11 +61,12 @@ object ConferManager {
     private val main = Handler(Looper.getMainLooper())
 
     @Volatile private var api: ConferApi? = null
+    @Volatile private var socket: ConferSocket? = null
     @Volatile var folders: List<Folder> = emptyList(); private set
     @Volatile var chats: List<Chat> = emptyList(); private set
     @Volatile private var subs: List<Pair<String, Int>> = emptyList()   // (type, id)
     @Volatile var activeChatId: Int = 0
-    @Volatile var connected = false; private set   // confer_ready received over the socket
+    @Volatile var connected = false; private set   // dedicated Confer socket is open
 
     private val messages = HashMap<Int, MutableList<Message>>()
     @Volatile private var lastPrintedChatId: Int = -1
@@ -81,7 +83,7 @@ object ConferManager {
     val displayName: String get() = Hub.settings.conferDisplay
 
     private fun rebuildApi() {
-        val a = ConferApi(settings().internetDomain)
+        val a = ConferApi(settings().conferServerEffective)
         a.token = settings().conferToken.ifBlank { null }
         api = a
     }
@@ -97,6 +99,7 @@ object ConferManager {
                 settings().conferDisplay = s.display
                 loadTreeBlocking()
                 loadSubsBlocking()
+                if (settings().conferMode) main.post { openSocket() }   // resume chat after re-login
                 main.post { cb(true, null); listener?.onState(); listener?.onTree() }
             } catch (t: Throwable) {
                 main.post { cb(false, t.message ?: "Login failed") }
@@ -113,42 +116,58 @@ object ConferManager {
         main.post { listener?.onState() }
     }
 
-    // ---- mode switching (announced to the server over the device socket) ----
+    // ---- mode switching ----
+    // Two independent signals: (1) a "mode" frame over the print/internet-listener socket, which
+    // pauses print jobs and flips that server's badge to "in Confer mode"; (2) our own dedicated
+    // WebSocket to the (possibly different) Confer server, which carries the chat itself.
     fun setConferMode(on: Boolean) {
         settings().conferMode = on
         if (on) {
-            if (loggedIn) sendHello() else main.post { listener?.onError("Log in to Confer first") }
+            if (!loggedIn) { main.post { listener?.onError("Log in to Confer first") }; return }
+            announcePrintMode(false)   // tell the print server we're chatting now
+            openSocket()
         } else {
-            Hub.internet?.sendFrame(JSONObject().put("type", "mode").put("mode", "print").toString())
-            connected = false
-            main.post { listener?.onState() }
+            announcePrintMode(true)    // back to Print mode → resume print jobs
+            closeSocket()
         }
     }
 
     val conferModeOn: Boolean get() = settings().conferMode
 
-    /** Called when the device WebSocket (re)opens, so we re-announce Confer mode after a reconnect. */
+    /** Announce Print vs Confer to the internet-listener (print) server so it pauses/resumes jobs. */
+    private fun announcePrintMode(printMode: Boolean) {
+        Hub.internet?.sendFrame(
+            JSONObject().put("type", "mode").put("mode", if (printMode) "print" else "confer").toString())
+    }
+
+    private fun openSocket() {
+        closeSocket()
+        val s = ConferSocket(
+            server = settings().conferServerEffective,
+            token = settings().conferToken,
+            onFrame = { onFrame(it) },
+            onConnected = { c -> connected = c; main.post { listener?.onState() } },
+            onAuthFailed = {
+                settings().clearConfer()
+                main.post { listener?.onError("Confer session expired — log in again"); listener?.onState() }
+            },
+        )
+        socket = s
+        s.start()
+    }
+
+    private fun closeSocket() {
+        socket?.stop(); socket = null; connected = false
+    }
+
+    /** Called when the internet-listener socket (re)opens, so print-mode pausing survives reconnects. */
     fun onSocketOpen() {
-        if (settings().conferMode && loggedIn) sendHello()
+        if (settings().conferMode && loggedIn) announcePrintMode(false)
     }
 
-    private fun sendHello() {
-        val ok = Hub.internet?.sendFrame(
-            JSONObject().put("type", "confer_hello").put("token", settings().conferToken).toString()
-        ) ?: false
-        if (!ok) Log.w(TAG, "confer_hello not sent — device socket not connected yet")
-    }
-
-    // ---- incoming frames from the device socket (called on the WS thread) ----
+    // ---- incoming frames from the Confer socket (called on the WS thread) ----
     fun onFrame(frame: JSONObject) {
         when (frame.optString("type")) {
-            "confer_ready" -> { connected = true; main.post { listener?.onState() } }
-            "confer_error" -> {
-                if (frame.optString("error") == "auth") {
-                    settings().clearConfer()
-                    main.post { listener?.onError("Confer session expired — log in again"); listener?.onState() }
-                }
-            }
             "confer_msg" -> handleIncoming(Message.from(frame))
             "confer_catchup" -> handleCatchup(frame.optInt("chat_id"), frame.optJSONArray("messages"))
         }
@@ -213,7 +232,7 @@ object ConferManager {
     }
 
     private fun markRead(chatId: Int, lastId: Int) {
-        Hub.internet?.sendFrame(
+        socket?.send(
             JSONObject().put("type", "read").put("chat_id", chatId).put("last_msg_id", lastId).toString())
     }
 
@@ -273,7 +292,18 @@ object ConferManager {
     }
 
     fun openChat(chatId: Int) {
+        val changed = chatId != activeChatId
         activeChatId = chatId
+        // Head the paper transcript with a terminal-style banner when you switch into a chat
+        // (only while actually in Confer mode, so browsing in Print mode doesn't waste paper).
+        if (changed && conferModeOn) {
+            io.execute {
+                try {
+                    Hub.printer.printBitmap(
+                        ConferRenderer.transcriptStart("# " + chatName(chatId), settings().printWidthPx), false, 1)
+                } catch (t: Throwable) { Log.e(TAG, "transcript banner failed", t) }
+            }
+        }
         io.execute {
             try {
                 val arr = api!!.history(chatId)

@@ -146,7 +146,7 @@ class MqttManager(private val context: Context) {
 
     private fun deviceBlock(): JSONObject = JSONObject()
         .put("identifiers", org.json.JSONArray(listOf(NODE_ID)))
-        .put("name", "Sunmi Print Hub")
+        .put("name", "Print Hub")
         .put("manufacturer", "SUNMI")
         .put("model", "V2 Pro Print Hub")
         .put("sw_version", BuildConfig.VERSION_NAME)
