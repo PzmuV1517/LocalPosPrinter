@@ -204,6 +204,15 @@ rbody = json.dumps({"version": "2.2.0", "host": "h"}).encode()
 assert client.post("/agent/poll", data=rbody, headers=sign("POST", "/agent/poll", rbody)).json()["cmd"] == {"cmd": "run", "command": "uptime"}
 print("  ok  heartbeat set, metrics stored, run command delivered")
 
+# ---- printer WebSocket registers as the print target; /status shows online + print delivers ----
+psec = client.post("/watchtower/devices/create", json={"device_id": "printer1", "name": "Printer"}, headers=AUTH).json()["secret"]
+whdr = sign("GET", "/messages", b"", device_id="printer1", secret=psec)
+assert client.post("/status", json={}, headers=AUTH).json()["device_connected"] is False
+with client.websocket_connect("/messages", headers=whdr):
+    assert client.post("/status", json={}, headers=AUTH).json()["device_connected"] is True
+    assert client.post("/print", json={"format": "plain", "text": "hi"}, headers=AUTH).json()["delivered"] is True
+print("  ok  printer WS (HMAC) -> device_connected True + print delivered")
+
 # ---- forwarded (no_print) err does not print ----
 b = json.dumps({"severity": "err", "message": "nginx 500", "service": "nginx", "no_print": True}).encode()
 r = client.post("/ingest", data=b, headers=sign("POST", "/ingest", b)).json()

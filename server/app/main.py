@@ -1163,10 +1163,12 @@ async def messages(ws: WebSocket) -> None:
         log.warning("Device WS rejected: %s", res.reason)
         await ws.close(code=4401)
         return
-    device_id = res.device_id or "default"
+    auth_id = res.device_id or "default"
     await ws.accept()
-    client = await relay.register(ws, device_id)
-    log.info("Printer device connected: %s", device_id)
+    # The HMAC id (auth_id) authenticates the connection; on the relay the printer is the single
+    # canonical print target "default" — that's what is_connected() and submit() look for.
+    client = await relay.register(ws, "default")
+    log.info("Printer device connected: %s", auth_id)
     try:
         while True:
             await ws.receive_text()
@@ -1176,7 +1178,7 @@ async def messages(ws: WebSocket) -> None:
         pass
     finally:
         await relay.unregister(client)
-        log.info("Printer device disconnected: %s", device_id)
+        log.info("Printer device disconnected: %s", auth_id)
 
 
 # ---------------------------------------------------------------------------
