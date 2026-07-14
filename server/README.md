@@ -179,6 +179,25 @@ need the user in the `systemd-journal` group.)
   emailed. **Send test email** verifies it. Password stored encrypted.
 - **Error-rate chart** (24h) and clickable **log detail** (full meta) in the Logs tab; **Export CSV**
   of the current filter; **per-severity retention** (keep errors longer than info).
+- **The printer self-reports** to Watchtower — connection, every print (success/fail), and rejects
+  show up as logs (service `printer.*`), marked no-print so they don't spew paper.
+
+## MQTT broker (hosted by Watchtower)
+
+Settings → **MQTT broker** turns on an MQTT broker **inside Watchtower** (amqtt) so external
+systems publish print jobs to reliable server infrastructure — the phone just receives them over
+its existing link, exactly like manual/error prints. Publish JSON to:
+
+```
+<prefix>print   e.g.  watchtower/print   {"format":"plain","text":"hello"}
+<prefix>alert   e.g.  watchtower/alert   {"alert_type":"crit","service":"backup","message":"disk full"}
+```
+
+Set a **username/password** (stored hashed) so external clients must authenticate; with no
+username it accepts anonymous connections (LAN/behind-firewall only). Expose the port
+(default 1883) through your firewall/reverse proxy for outside publishers. The broker runs guarded
+— if it can't start, the rest of the server is unaffected. From Home Assistant, point an
+`mqtt.publish` at `watchtower/print`; it prints via the phone.
 
 ## Pairing the printer app
 

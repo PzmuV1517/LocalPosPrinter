@@ -93,6 +93,7 @@ class InternetListener(
                 Log.i(TAG, "Internet listener connected")
                 Hub.internetConnected = true
                 backoff = MIN_BACKOFF_MS
+                Hub.reportEvent("info", "printer connected to Watchtower", "printer.net")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {

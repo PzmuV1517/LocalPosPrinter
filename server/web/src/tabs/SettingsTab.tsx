@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api'
 import { fmtTime, useGuard } from '../common'
-import type { NotifySettings, Severity } from '../types'
+import type { MqttSettings, NotifySettings, Severity } from '../types'
 
 const SEVS: Severity[] = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info']
 
@@ -9,6 +9,7 @@ const EMPTY_NOTIFY: NotifySettings = {
   enabled: false, host: '', port: 587, security: 'starttls', username: '',
   from_addr: '', to_addr: '', min_sev: 'crit', has_password: false,
 }
+const EMPTY_MQTT: MqttSettings = { enabled: false, port: 1883, username: '', has_password: false, prefix: 'watchtower/' }
 
 export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) {
   const guard = useGuard(onUnauthorized)
@@ -23,6 +24,9 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
   const [notify, setNotify] = useState<NotifySettings>(EMPTY_NOTIFY)
   const [smtpPw, setSmtpPw] = useState('')
   const [notifyMsg, setNotifyMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [mqtt, setMqtt] = useState<MqttSettings>(EMPTY_MQTT)
+  const [mqttPw, setMqttPw] = useState('')
+  const [mqttMsg, setMqttMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [updateLog, setUpdateLog] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
   const [passkeys, setPasskeys] = useState<api.Passkey[]>([])
@@ -43,6 +47,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
       })
       setUser(d.username)
       setNotify(d.notify || EMPTY_NOTIFY)
+      setMqtt(d.mqtt || EMPTY_MQTT)
     }
     loadPasskeys()
   }, [guard, loadPasskeys])
@@ -90,6 +95,15 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     setNotifyMsg({ ok: true, text: 'Sending…' })
     const d = await guard(api.testEmail())
     if (d) setNotifyMsg({ ok: d.ok, text: d.ok ? 'Test email sent.' : `Failed: ${d.message}` })
+  }
+  const M = (patch: Partial<MqttSettings>) => setMqtt({ ...mqtt, ...patch })
+  async function saveMqtt() {
+    setMqttMsg({ ok: true, text: 'Applying…' })
+    const payload: Record<string, unknown> = { enabled: mqtt.enabled, port: mqtt.port, username: mqtt.username, prefix: mqtt.prefix }
+    if (mqttPw) payload.password = mqttPw
+    const res = await guard(api.setConfig({ mqtt: payload }))
+    if (res?.ok) { setMqttMsg({ ok: true, text: mqtt.enabled ? 'Broker (re)started.' : 'Saved (broker off).' }); setMqttPw(''); load() }
+    else setMqttMsg({ ok: false, text: 'Failed.' })
   }
 
   async function waitForRestart() {
@@ -178,6 +192,31 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           <button className="ghost" style={{ flex: '0 0 auto' }} onClick={sendTest}>Send test email</button>
         </div>
         {notifyMsg && <div className={`result ${notifyMsg.ok ? 'ok' : 'bad'}`}>{notifyMsg.text}</div>}
+      </div>
+
+      <div className="card">
+        <h2>MQTT broker (hosted here)</h2>
+        <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
+          Watchtower runs the MQTT broker so external systems (Home Assistant, scripts) publish print jobs to reliable
+          server infra, and the printer just receives them over its existing link. Publish JSON to
+          <span className="mono"> {mqtt.prefix}print</span> or <span className="mono">{mqtt.prefix}alert</span>.
+        </p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none' }}>
+          <input type="checkbox" checked={mqtt.enabled} onChange={(e) => M({ enabled: e.target.checked })} style={{ width: 'auto' }} /> Enable MQTT broker
+        </label>
+        <div className="row">
+          <div><label>Port</label><input type="number" value={mqtt.port} onChange={(e) => M({ port: +e.target.value })} /></div>
+          <div><label>Topic prefix</label><input value={mqtt.prefix} onChange={(e) => M({ prefix: e.target.value })} /></div>
+        </div>
+        <div className="row">
+          <div><label>Username (blank = anonymous)</label><input value={mqtt.username} autoComplete="off" onChange={(e) => M({ username: e.target.value })} /></div>
+          <div><label>Password {mqtt.has_password && '(set — blank keeps)'}</label><input type="password" value={mqttPw} autoComplete="new-password" onChange={(e) => setMqttPw(e.target.value)} /></div>
+        </div>
+        <div style={{ marginTop: 14 }}><button onClick={saveMqtt}>Save &amp; apply</button></div>
+        {mqttMsg && <div className={`result ${mqttMsg.ok ? 'ok' : 'bad'}`}>{mqttMsg.text}</div>}
+        <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
+          Expose the port through your firewall/proxy for external publishers. With no username it accepts anonymous connections (LAN only).
+        </p>
       </div>
 
       <div className="card">

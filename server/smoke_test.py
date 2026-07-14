@@ -229,7 +229,12 @@ assert client.post("/config/set", json={"notify": {"enabled": True, "host": "smt
 n = client.post("/config/get", json={}, headers=AUTH).json()["notify"]
 assert n["enabled"] and n["host"] == "smtp.x" and n["has_password"] is True
 client.post("/config/set", json={"notify": {"enabled": False}}, headers=AUTH)  # off so no SMTP attempts later
-print("  ok  metrics timeseries + CSV export + notify config roundtrip")
+# MQTT config roundtrip (broker left disabled so the smoke test doesn't bind a port)
+assert client.post("/config/set", json={"mqtt": {"enabled": False, "port": 1883, "username": "ha",
+       "password": "pw", "prefix": "watchtower"}}, headers=AUTH).json()["ok"]
+mq = client.post("/config/get", json={}, headers=AUTH).json()["mqtt"]
+assert mq["username"] == "ha" and mq["has_password"] is True and mq["prefix"] == "watchtower/"
+print("  ok  metrics timeseries + CSV export + notify + mqtt config roundtrip")
 
 # ---- delete is refused for an active device, allowed once revoked ----
 resp = client.post("/watchtower/devices/create", json={"device_id": "tmp-dev"}, headers=AUTH)

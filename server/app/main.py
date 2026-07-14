@@ -63,8 +63,10 @@ db = Database(DATA_DIR, box, lookup_key=box.derive("temp-password-lookup"))
 auth = Auth(db, session_key=box.derive("session"), skew_secs=HMAC_SKEW_SECS)
 from .notify import Notifier  # noqa: E402  (after db/box exist)
 from .passkeys import Passkeys  # noqa: E402
+from .mqtt_bridge import MqttBridge  # noqa: E402
 notifier = Notifier(db, box)
 passkeys = Passkeys(db)
+mqtt_bridge = MqttBridge(db, DATA_DIR, log)
 
 # Bootstrap: a headless deploy can skip the wizard by providing BOTH a username and password in
 # the env. With only a password (or neither), the browser setup wizard runs on first visit.
@@ -511,6 +513,7 @@ async def config_get(request: Request) -> JSONResponse:
             "err_retention_days": err_retention_days(),
             "disk_alert_pct": disk_alert_pct(),
             "notify": notifier.get_settings(),
+            "mqtt": mqtt_bridge.get_settings(),
         }
     )
 
@@ -534,6 +537,9 @@ async def config_set(request: Request) -> JSONResponse:
         db.set_config("disk_alert_pct", int(body["disk_alert_pct"]))
     if isinstance(body.get("notify"), dict):
         notifier.save_settings(body["notify"])
+    if isinstance(body.get("mqtt"), dict):
+        mqtt_bridge.save_settings(body["mqtt"])
+        await mqtt_bridge.reload()
     # Changing credentials requires a valid session (already checked above).
     new_user = (body.get("new_master_username") or "").strip()
     if new_user:
@@ -720,6 +726,34 @@ async def _render_and_submit(payload: dict, on_delivered=None) -> bool:
         "image_raw_bitmap": rendermod.to_base64_png(img),
     }
     return await relay.submit(job, on_delivered=on_delivered)
+
+
+async def _mqtt_on_message(kind: str, payload: dict) -> None:
+    """A print/alert arrived on the Watchtower MQTT broker (already authenticated) — render it
+    and relay to the printer, same as a manual/error print."""
+    if kind == "alert":
+        p = _log_to_alert_payload(
+            str(payload.get("device") or "mqtt"),
+            str(payload.get("alert_type") or payload.get("type") or "alert"),
+            str(payload.get("service") or ""),
+            str(payload.get("message") or payload.get("text") or ""),
+            payload.get("ts") or time.time(),
+        )
+    else:
+        p = dict(payload)
+        p.pop("password", None)
+        p.pop("code", None)
+    try:
+        delivered = await _render_and_submit(p)
+    except rendermod.RenderError as exc:
+        log.warning("MQTT render failed: %s", exc)
+        return
+    db.add_history({"format": p.get("format", "?"), "label": _label_for(p), "user": "mqtt",
+                    "status": "printed" if delivered else "queued"})
+    log.info("MQTT %s relayed to printer (delivered=%s)", kind, delivered)
+
+
+mqtt_bridge.on_message = _mqtt_on_message
 
 
 async def _print_payload(payload: dict, authed_device=None, authed_session=False) -> JSONResponse:
@@ -1240,6 +1274,10 @@ async def _startup() -> None:
     asyncio.create_task(_pruner())
     asyncio.create_task(_pinger())
     asyncio.create_task(_watchdog())
+    try:
+        await mqtt_bridge.start()
+    except Exception as exc:
+        log.error("MQTT bridge failed to start: %s", exc)
     log.info("Watchtower up. configured=%s auto-print<=%s fuse=%d/min retention=%dd",
              db.is_configured(), db.get_config("auto_print_min_sev", _DEF_MIN_SEV),
              auto_print_fuse(), retention_days())
@@ -1249,4 +1287,5 @@ async def _startup() -> None:
 async def _shutdown() -> None:
     # On SIGTERM (systemctl restart, docker stop) close device sockets so they reconnect fast.
     await relay.close_all()
+    await mqtt_bridge.stop()
     log.info("Shutdown: closed device connections")

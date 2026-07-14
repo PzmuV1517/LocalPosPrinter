@@ -37,7 +37,8 @@ class ScoutClient(
     val configured: Boolean get() = deviceId.isNotBlank() && secret.isNotBlank() && base.isNotBlank()
 
     /** Ship one log event on a background thread; never throws. */
-    fun ship(severity: String, message: String, service: String = "", meta: Map<String, Any?> = emptyMap()) {
+    fun ship(severity: String, message: String, service: String = "", meta: Map<String, Any?> = emptyMap(),
+             noPrint: Boolean = true) {
         if (!configured) return
         Thread {
             try {
@@ -46,6 +47,8 @@ class ScoutClient(
                 json.put("message", message)
                 json.put("service", service)
                 json.put("ts", System.currentTimeMillis() / 1000.0)
+                // The printer's own logs go to the dashboard/email, not to paper (avoids loops).
+                if (noPrint) json.put("no_print", true)
                 if (meta.isNotEmpty()) json.put("meta", JSONObject(meta))
                 val body = json.toString().toByteArray(Charsets.UTF_8)
                 val headers = HmacSigner.headers(secret, deviceId, "POST", "/ingest", body)

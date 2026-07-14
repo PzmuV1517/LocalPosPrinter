@@ -45,7 +45,7 @@ object Hub {
 
     /** Best-effort self-report to Watchtower's /ingest. Always on once a device secret is
      *  configured (HMAC identity). Never throws (ScoutClient is fire-and-forget). */
-    fun reportEvent(severity: String, message: String, service: String) {
+    fun reportEvent(severity: String, message: String, service: String, noPrint: Boolean = true) {
         if (!initialised) return
         val domain = settings.internetDomain
         if (domain.isBlank() || settings.deviceSecret.isBlank()) return
@@ -56,6 +56,6 @@ object Hub {
             scoutClient = c
             scoutKey = key
         }
-        c.ship(severity, message, service)
+        c.ship(severity, message, service, noPrint = noPrint)
     }
 }

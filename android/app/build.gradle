@@ -13,8 +13,8 @@ android {
         applicationId "com.sunmi.printhub"
         minSdk 25
         targetSdk 28
-        versionCode 13
-        versionName "2.1.0"
+        versionCode 14
+        versionName "2.1.1"
     }
 
     buildTypes {

@@ -63,6 +63,14 @@ export interface NotifySettings {
   has_password: boolean
 }
 
+export interface MqttSettings {
+  enabled: boolean
+  port: number
+  username: string
+  has_password: boolean
+  prefix: string
+}
+
 export interface ServerConfig {
   username: string
   print_width: number
@@ -72,6 +80,7 @@ export interface ServerConfig {
   err_retention_days: number
   disk_alert_pct: number
   notify: NotifySettings
+  mqtt: MqttSettings
 }
 
 export interface UpdateResult {

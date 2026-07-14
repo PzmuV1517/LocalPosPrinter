@@ -93,6 +93,9 @@ object PrintDispatcher {
         // dashboard. FAILED prints are errors (auto-printed by the server); auth rejects are
         // security-relevant warnings. Successes stay quiet to avoid flooding the stream.
         when (result.status) {
+            JobStatus.SUCCESS -> Hub.reportEvent(
+                "info", "printed [${result.format}] via ${source.wire}", "printer.print"
+            )
             JobStatus.FAILED -> Hub.reportEvent(
                 "err", "print failed [${result.format}]: ${result.error ?: "unknown"}", "print/${source.wire}"
             )
