@@ -2,6 +2,7 @@
 android/.gradle/
 android/build/
 android/app/build/
+android/mobile/build/
 android/local.properties
 android/.idea/
 *.iml

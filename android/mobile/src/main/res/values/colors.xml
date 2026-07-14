@@ -1,0 +1,7 @@
+<resources>
+    <color name="wt_bg">#FF000000</color>
+    <color name="wt_surface">#FF0E0E0E</color>
+    <color name="wt_text">#FFEDEDED</color>
+    <color name="wt_accent">#FFE5484D</color>
+    <color name="ic_launcher_background">#FF000000</color>
+</resources>

@@ -28,8 +28,11 @@ import java.util.concurrent.TimeUnit
 object AppUpdater {
 
     private const val TAG = "AppUpdater"
-    private const val LATEST_API =
-        "https://api.github.com/repos/PzmuV1517/LocalPosPrinter/releases/latest"
+    // This repo hosts two apps; scan releases and take the latest with a SunmiPrintHub-* asset
+    // (so a Watchtower-mobile release never hijacks this updater).
+    private const val RELEASES_API =
+        "https://api.github.com/repos/PzmuV1517/LocalPosPrinter/releases?per_page=30"
+    private const val ASSET_PREFIX = "SunmiPrintHub-"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -65,25 +68,27 @@ object AppUpdater {
 
     private fun fetchLatest(): Release {
         val req = Request.Builder()
-            .url(LATEST_API)
+            .url(RELEASES_API)
             .header("Accept", "application/vnd.github+json")
             .header("User-Agent", "SunmiPrintHub")
             .build()
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
-            val json = JSONObject(resp.body?.string() ?: throw IOException("empty body"))
-            val tag = json.getString("tag_name")
-            val assets = json.getJSONArray("assets")
-            var apkUrl = ""
-            for (i in 0 until assets.length()) {
-                val a = assets.getJSONObject(i)
-                if (a.getString("name").endsWith(".apk", ignoreCase = true)) {
-                    apkUrl = a.getString("browser_download_url")
-                    break
+            val arr = org.json.JSONArray(resp.body?.string() ?: throw IOException("empty body"))
+            for (i in 0 until arr.length()) {
+                val rel = arr.getJSONObject(i)
+                if (rel.optBoolean("draft") || rel.optBoolean("prerelease")) continue
+                val assets = rel.getJSONArray("assets")
+                for (j in 0 until assets.length()) {
+                    val a = assets.getJSONObject(j)
+                    val name = a.getString("name")
+                    if (name.startsWith(ASSET_PREFIX) && name.endsWith(".apk", ignoreCase = true)) {
+                        val tag = rel.getString("tag_name").removePrefix("v").removePrefix("V")
+                        return Release(tag, a.getString("browser_download_url"))
+                    }
                 }
             }
-            if (apkUrl.isEmpty()) throw IOException("latest release has no APK asset")
-            return Release(tag.removePrefix("v").removePrefix("V"), apkUrl)
+            throw IOException("no SunmiPrintHub release found")
         }
     }
 

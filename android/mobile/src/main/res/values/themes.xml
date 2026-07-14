@@ -1,0 +1,12 @@
+<resources>
+    <style name="Theme.Watchtower" parent="Theme.MaterialComponents.NoActionBar">
+        <item name="colorPrimary">@color/wt_surface</item>
+        <item name="colorPrimaryVariant">@color/wt_bg</item>
+        <item name="colorOnPrimary">@color/wt_text</item>
+        <item name="colorSecondary">@color/wt_accent</item>
+        <item name="colorSurface">@color/wt_surface</item>
+        <item name="android:windowBackground">@color/wt_bg</item>
+        <item name="android:statusBarColor">@color/wt_bg</item>
+        <item name="android:navigationBarColor">@color/wt_bg</item>
+    </style>
+</resources>
