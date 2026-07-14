@@ -69,25 +69,30 @@ object ConferRenderer {
     /**
      * A text message. Your own sits on the right — your name, then the message closed with a `<`.
      * Others sit on the left — their name, then the message opened with a `>`. The arrows point
-     * inward toward each speaker's side.
+     * inward toward each speaker's side. [showName] is false for a run of messages from the same
+     * sender, so consecutive messages group tightly without repeating the name.
      */
-    fun renderText(name: String, text: String, mine: Boolean, w: Int): Bitmap {
+    fun renderText(name: String, text: String, mine: Boolean, showName: Boolean, w: Int): Bitmap {
         val inner = (w - 2 * PAD).toInt().coerceAtLeast(1)
         val align = if (mine) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL
         val body = if (mine) "$text <" else "> $text"
-        val nameBmp = block(layout(name, textPaint(NAME_SIZE, true), inner, align), w, 6f, 0f)
-        val bodyBmp = block(layout(body, textPaint(TEXT_SIZE, false), inner, align), w, 0f, 10f)
-        return stack(listOf(nameBmp, bodyBmp), w)
+        val parts = ArrayList<Bitmap>()
+        // A little extra top gap before a new speaker; grouped messages stay snug.
+        if (showName) parts.add(block(layout(name, textPaint(NAME_SIZE, true), inner, align), w, 10f, 0f))
+        parts.add(block(layout(body, textPaint(TEXT_SIZE, false), inner, align), w, if (showName) 0f else 2f, 4f))
+        return if (parts.size == 1) parts[0] else stack(parts, w)
     }
 
     /** An image message: name / `>` / the image, page-wide (scaled to the full width, dithered). */
-    fun renderImage(name: String, image: Bitmap, w: Int): Bitmap {
+    fun renderImage(name: String, image: Bitmap, showName: Boolean, w: Int): Bitmap {
         val inner = (w - 2 * PAD).toInt().coerceAtLeast(1)
-        val nameBmp = block(layout(name, textPaint(NAME_SIZE, true), inner, Layout.Alignment.ALIGN_NORMAL), w, 6f, 0f)
-        val gtBmp = block(layout(">", textPaint(TEXT_SIZE, false), inner, Layout.Alignment.ALIGN_NORMAL), w, 0f, 4f)
         val scaled = if (image.width == w) image else ImageUtils.scaleToWidth(image, w)
         val printable = ImageUtils.floydSteinberg(scaled)
-        return stack(listOf(nameBmp, gtBmp, printable), w)
+        val parts = ArrayList<Bitmap>()
+        if (showName) parts.add(block(layout(name, textPaint(NAME_SIZE, true), inner, Layout.Alignment.ALIGN_NORMAL), w, 10f, 0f))
+        parts.add(block(layout(">", textPaint(TEXT_SIZE, false), inner, Layout.Alignment.ALIGN_NORMAL), w, 0f, 4f))
+        parts.add(printable)
+        return stack(parts, w)
     }
 
     /** A terminal-style banner printed when a chat is opened, to head its paper transcript. */

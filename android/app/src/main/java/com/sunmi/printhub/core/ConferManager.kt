@@ -70,6 +70,9 @@ object ConferManager {
 
     private val messages = HashMap<Int, MutableList<Message>>()
     @Volatile private var lastPrintedChatId: Int = -1
+    // Sender of the last message actually printed, for grouping: a run from one sender hides the
+    // repeated name (the ">"/"<" marker stays). Reset to null after any banner/separator.
+    @Volatile private var lastPrintedSender: String? = null
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -150,6 +153,7 @@ object ConferManager {
                     "> awaiting transcripts_",
                 )
                 Hub.printer.printBitmap(ConferRenderer.conferStartup(lines, s.printWidthPx), false, 4)
+                lastPrintedSender = null
             } catch (t: Throwable) { Log.e(TAG, "startup banner failed", t) }
         }
     }
@@ -159,6 +163,7 @@ object ConferManager {
             try {
                 Hub.printer.printBitmap(
                     ConferRenderer.transcriptStart("# " + chatName(chatId), settings().printWidthPx), false, 4)
+                lastPrintedSender = null
             } catch (t: Throwable) { Log.e(TAG, "transcript banner failed", t) }
         }
     }
@@ -238,7 +243,8 @@ object ConferManager {
     private fun printSeparator(chatId: Int) {
         io.execute {
             try {
-                Hub.printer.printBitmap(ConferRenderer.separator(chatName(chatId), settings().printWidthPx), false, 0)
+                Hub.printer.printBitmap(ConferRenderer.separator(chatName(chatId), settings().printWidthPx), false, 1)
+                lastPrintedSender = null   // a new source chat → re-show the name
             } catch (t: Throwable) { Log.e(TAG, "separator print failed", t) }
         }
     }
@@ -248,18 +254,20 @@ object ConferManager {
             try {
                 val w = settings().printWidthPx
                 if (separatorChat != null) {
-                    Hub.printer.printBitmap(ConferRenderer.separator(chatName(separatorChat), w), false, 0)
+                    Hub.printer.printBitmap(ConferRenderer.separator(chatName(separatorChat), w), false, 1)
+                    lastPrintedSender = null
                 }
                 val mine = msg.sender == username
+                val showName = msg.sender != lastPrintedSender   // hide the repeated name in a run
                 val bmp = if (msg.kind == "image") {
                     val img = ImageUtils.decodeBase64(msg.body) ?: return@execute
-                    ConferRenderer.renderImage(if (mine) displayName.ifBlank { username } else msg.senderDisplay, img, w)
+                    ConferRenderer.renderImage(if (mine) displayName.ifBlank { username } else msg.senderDisplay, img, showName, w)
                 } else {
-                    ConferRenderer.renderText(msg.senderDisplay, msg.body, mine, w)
+                    ConferRenderer.renderText(msg.senderDisplay, msg.body, mine, showName, w)
                 }
-                // Feed a few lines after each message so the last line clears the print head /
-                // tear bar instead of staying tucked just inside the printer.
-                Hub.printer.printBitmap(bmp, false, 4)
+                // Small feed so grouped messages stay tight but the last line still clears the head.
+                Hub.printer.printBitmap(bmp, false, 2)
+                lastPrintedSender = msg.sender
             } catch (t: Throwable) { Log.e(TAG, "message print failed", t) }
         }
     }
