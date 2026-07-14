@@ -131,6 +131,13 @@
         <EditText android:id="@+id/deviceSecretInput" android:layout_width="match_parent"
             android:layout_height="wrap_content" android:hint="Device secret (sph_…) — required for the internet link" android:inputType="textPassword" />
 
+        <Button
+            android:id="@+id/scanQrButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="Scan pairing QR" />
+
         <!-- System -->
         <TextView style="@style/SectionHeader" android:text="System" />
 

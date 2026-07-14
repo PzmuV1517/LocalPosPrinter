@@ -8,14 +8,22 @@ import android.provider.Settings as AndroidSettings
 import android.widget.ArrayAdapter
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.sunmi.printhub.core.Hub
 import com.sunmi.printhub.databinding.ActivitySettingsBinding
 import com.sunmi.printhub.service.PrintHubService
+import org.json.JSONObject
 
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySettingsBinding
     private val modes = listOf("receipt", "label")
+
+    // QR scanner (zxing-embedded handles the camera + permission prompt).
+    private val scanLauncher = registerForActivityResult(ScanContract()) { result ->
+        result.contents?.let { applyPairing(it) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -36,8 +44,41 @@ class SettingsActivity : AppCompatActivity() {
         }
         binding.batteryButton.setOnClickListener { requestIgnoreBattery() }
         binding.saveButton.setOnClickListener { saveAndRestart() }
+        binding.scanQrButton.setOnClickListener { startScan() }
 
         updateInternetStatus()
+    }
+
+    private fun startScan() {
+        val opts = ScanOptions()
+            .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+            .setPrompt("Scan the Watchtower pairing QR")
+            .setBeepEnabled(false)
+            .setOrientationLocked(false)
+        scanLauncher.launch(opts)
+    }
+
+    /** Parse a Watchtower pairing QR ({"url","device_id","secret"}) and fill the fields. */
+    private fun applyPairing(contents: String) {
+        try {
+            val obj = JSONObject(contents)
+            val url = obj.optString("url").trim()
+            val deviceId = obj.optString("device_id").trim()
+            val secret = obj.optString("secret").trim()
+            if (secret.isEmpty() || deviceId.isEmpty()) {
+                toast("Not a valid pairing QR")
+                return
+            }
+            if (url.isNotEmpty()) {
+                binding.internetDomainInput.setText(url)
+                binding.internetEnabled.isChecked = true
+            }
+            binding.deviceIdInput.setText(deviceId)
+            binding.deviceSecretInput.setText(secret)
+            toast("Paired '$deviceId' — review and Save")
+        } catch (t: Throwable) {
+            toast("Couldn't read pairing QR")
+        }
     }
 
     override fun onResume() {

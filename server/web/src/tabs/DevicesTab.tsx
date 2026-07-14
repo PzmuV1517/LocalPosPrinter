@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import QRCode from 'qrcode'
 import * as api from '../api'
 import { CopyButton, DeviceCard, useGuard } from '../common'
 import type { Device, SevCounts } from '../types'
@@ -8,13 +9,27 @@ const installLine = (id: string) =>
 
 function SecretPanel({ id, secret }: { id: string; secret: string }) {
   const setCmd = `scout set-secret ${secret}`
+  const [qr, setQr] = useState<string | null>(null)
+  // Payload the printer app's "Scan pairing QR" reads to auto-fill server + device id + secret.
+  const pairPayload = JSON.stringify({ v: 1, url: location.origin, device_id: id, secret })
+  async function showQr() {
+    setQr(await QRCode.toDataURL(pairPayload, { margin: 1, width: 240,
+      color: { dark: '#000000', light: '#ffffff' } }))
+  }
   return (
     <div className="secretbox">
       <div><b>{id}</b> secret — copy now, shown once <CopyButton text={secret} /></div>
       <div style={{ marginTop: 4 }} className="mono">{secret}</div>
-      <div style={{ marginTop: 12 }} className="muted">1) install on the device <CopyButton text={installLine(id)} /></div>
+      <div style={{ marginTop: 12 }}>
+        <button className="ghost mini" onClick={showQr}>Show pairing QR</button>
+        <span className="muted" style={{ marginLeft: 8, fontSize: 11 }}>scan from the app: Settings → Scan pairing QR</span>
+      </div>
+      {qr && <div style={{ marginTop: 10, textAlign: 'center' }}>
+        <img src={qr} alt="pairing QR" width={220} height={220} style={{ background: '#fff', padding: 6 }} />
+      </div>}
+      <div style={{ marginTop: 12 }} className="muted">or install a Scout <CopyButton text={installLine(id)} /></div>
       <div className="mono">{installLine(id)}</div>
-      <div style={{ marginTop: 12 }} className="muted">2) set the secret <CopyButton text={setCmd} /></div>
+      <div style={{ marginTop: 8 }} className="muted">then set the secret <CopyButton text={setCmd} /></div>
       <div className="mono">{setCmd}</div>
     </div>
   )

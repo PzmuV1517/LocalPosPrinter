@@ -13,8 +13,8 @@ android {
         applicationId "com.sunmi.printhub"
         minSdk 25
         targetSdk 28
-        versionCode 12
-        versionName "2.0.1"
+        versionCode 13
+        versionName "2.1.0"
     }
 
     buildTypes {
@@ -60,6 +60,8 @@ dependencies {
 
     // Barcode / QR generation to Bitmap.
     implementation 'com.google.zxing:core:3.4.1'
+    // QR scanning (camera) for pairing — brings a self-contained scanner activity.
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
 
     // Sunmi's official printer library — correct AIDL + SunmiPrinterService wrapper.
     implementation 'com.sunmi:printerlibrary:1.0.18'
