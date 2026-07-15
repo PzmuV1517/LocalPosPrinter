@@ -3,7 +3,9 @@ package com.sunmi.printhub.ui
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
+import android.os.PowerManager
 import android.provider.Settings as AndroidSettings
 import android.widget.ArrayAdapter
 import android.widget.Toast
@@ -47,6 +49,18 @@ class SettingsActivity : AppCompatActivity() {
         binding.scanQrButton.setOnClickListener { startScan() }
 
         updateInternetStatus()
+        updateBatteryStatus()
+    }
+
+    /** Show whether the app is actually Doze-exempt, so "I pressed yes" can be verified. */
+    private fun updateBatteryStatus() {
+        val exempt = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            (getSystemService(POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(packageName)
+        } else true
+        binding.batteryButton.text = if (exempt)
+            "Battery optimization: EXEMPT (tap to review)"
+        else
+            "Ignore battery optimizations — NOT exempt, tap to fix"
     }
 
     private fun startScan() {
@@ -84,6 +98,7 @@ class SettingsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         updateInternetStatus()
+        updateBatteryStatus()   // reflect the result after returning from the system dialog
     }
 
     private fun loadInto() {

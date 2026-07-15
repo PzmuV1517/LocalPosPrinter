@@ -31,6 +31,12 @@ class PrintHubService : Service() {
         private const val TAG = "PrintHubService"
         private const val CHANNEL_ID = "printhub_service"
         private const val NOTIF_ID = 1001
+        // Doze-proof heartbeat: a self-rescheduling exact alarm that wakes the app to re-acquire
+        // locks + reconnect, so a screen-off backlog flushes within ~a minute instead of waiting
+        // for the screen to come on. When the app is battery-whitelisted this fires on time; even
+        // if it isn't, it still fires during Doze maintenance windows.
+        private const val ACTION_HEARTBEAT = "com.sunmi.printhub.HEARTBEAT"
+        private const val HEARTBEAT_INTERVAL_MS = 60_000L
 
         fun start(context: Context) {
             val i = Intent(context, PrintHubService::class.java)
@@ -104,8 +110,63 @@ class PrintHubService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        startChannels()
+        if (intent?.action == ACTION_HEARTBEAT) {
+            heartbeat()
+        } else {
+            startChannels()
+        }
+        scheduleHeartbeat()
         return START_STICKY
+    }
+
+    /**
+     * Fired by the alarm. Waking the CPU here lets any socket data that Doze deferred get
+     * processed (that's what flushes the backlog), and we re-acquire locks / force a reconnect
+     * if the link actually dropped — all without needing the screen to come on.
+     */
+    private fun heartbeat() {
+        if (wakeLock?.isHeld != true || wifiLock?.isHeld != true) {
+            releaseLocks(); acquireLocks()
+        }
+        if (!Hub.internetConnected && Hub.settings.internetEnabled && Hub.settings.internetDomain.isNotBlank()) {
+            Log.i(TAG, "Heartbeat: internet link down — reconnecting")
+            stopInternet()
+            internet = InternetListener(
+                Hub.settings.internetDomain, deviceId = Hub.settings.deviceId,
+                deviceSecret = Hub.settings.deviceSecret,
+            ).also { it.start() }
+            Hub.internet = internet
+        }
+    }
+
+    private fun scheduleHeartbeat() {
+        val pi = PendingIntent.getService(
+            this, 2, Intent(this, PrintHubService::class.java).setAction(ACTION_HEARTBEAT),
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            else PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        try {
+            val am = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+            val next = System.currentTimeMillis() + HEARTBEAT_INTERVAL_MS
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, next, pi)
+            } else {
+                am.setExact(android.app.AlarmManager.RTC_WAKEUP, next, pi)
+            }
+        } catch (t: Throwable) {
+            Log.e(TAG, "Failed to schedule heartbeat", t)
+        }
+    }
+
+    private fun cancelHeartbeat() {
+        val pi = PendingIntent.getService(
+            this, 2, Intent(this, PrintHubService::class.java).setAction(ACTION_HEARTBEAT),
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            else PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        try { (getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager).cancel(pi) } catch (_: Throwable) {}
     }
 
     /**
@@ -188,6 +249,7 @@ class PrintHubService : Service() {
     }
 
     override fun onDestroy() {
+        cancelHeartbeat()
         stopHttp()
         stopMqtt()
         stopInternet()
