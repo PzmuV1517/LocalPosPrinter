@@ -9,7 +9,6 @@
         <item name="android:textColorPrimary">@color/wt_text</item>
         <item name="android:textColorSecondary">@color/wt_muted</item>
         <item name="android:textColorHint">@color/wt_muted</item>
-        <item name="android:fontFamily">monospace</item>
         <item name="android:editTextBackground">@drawable/wt_input</item>
         <item name="buttonStyle">@style/WtButton</item>
         <item name="actionBarStyle">@style/WtActionBar</item>
@@ -32,6 +31,6 @@
         <item name="android:textAllCaps">true</item>
         <item name="android:letterSpacing">0.08</item>
         <item name="android:textSize">13sp</item>
-        <item name="android:fontFamily">monospace</item>
+        <item name="android:typeface">monospace</item>
     </style>
 </resources>

@@ -15,6 +15,6 @@
         android:maxWidth="260dp"
         android:padding="8dp"
         android:textColor="@color/wt_text"
-        android:fontFamily="monospace"
+        android:typeface="monospace"
         android:textSize="14sp" />
 </LinearLayout>

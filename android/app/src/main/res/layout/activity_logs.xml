@@ -51,7 +51,7 @@
             android:id="@+id/logText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:fontFamily="monospace"
+            android:typeface="monospace"
             android:padding="8dp"
             android:textColor="#D6E2E9"
             android:textIsSelectable="true"
