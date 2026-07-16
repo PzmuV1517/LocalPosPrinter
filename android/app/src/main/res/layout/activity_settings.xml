@@ -160,6 +160,12 @@
             android:layout_height="wrap_content"
             android:text="Start on boot" />
 
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/wallpaperSwitch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Use home screen wallpaper as background" />
+
         <Button
             android:id="@+id/batteryButton"
             android:layout_width="match_parent"

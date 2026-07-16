@@ -139,6 +139,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean(K_AUTOSTART, true)
         set(v) = prefs.edit().putBoolean(K_AUTOSTART, v).apply()
 
+    // Use the device home-screen wallpaper as the app background instead of solid black.
+    var useWallpaper: Boolean
+        get() = prefs.getBoolean(K_WALLPAPER, false)
+        set(v) = prefs.edit().putBoolean(K_WALLPAPER, v).apply()
+
     private fun normalizePrefix(v: String): String =
         if (v.isBlank()) "sunmi/printhub/" else if (v.endsWith("/")) v else "$v/"
 
@@ -165,5 +170,6 @@ class Settings(context: Context) {
         private const val K_CONFER_DISPLAY = "confer_display"
         private const val K_CONFER_MODE = "confer_mode"
         private const val K_AUTOSTART = "auto_start"
+        private const val K_WALLPAPER = "use_wallpaper"
     }
 }

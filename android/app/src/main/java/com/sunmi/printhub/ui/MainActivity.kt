@@ -56,7 +56,7 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
         Hub.init(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        supportActionBar?.title = getString(com.sunmi.printhub.R.string.app_name)
+        binding.menuButton.setOnClickListener { showMenu(it) }
 
         binding.formatSpinner.adapter =
             ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, formats)
@@ -270,6 +270,7 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
 
     override fun onResume() {
         super.onResume()
+        applyBackground()
         ConferManager.listener = this
         if (binding.conferContainer.visibility == View.VISIBLE) refreshConferUi()
     }
@@ -372,29 +373,32 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
         }
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(com.sunmi.printhub.R.menu.main_menu, menu)
-        return true
+    private fun showMenu(anchor: View) {
+        android.widget.PopupMenu(this, anchor).apply {
+            menuInflater.inflate(com.sunmi.printhub.R.menu.main_menu, menu)
+            setOnMenuItemClickListener { handleMenu(it.itemId) }
+            show()
+        }
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            com.sunmi.printhub.R.id.action_settings -> {
-                startActivity(android.content.Intent(this, SettingsActivity::class.java)); true
-            }
-            com.sunmi.printhub.R.id.action_job_log -> {
-                startActivity(android.content.Intent(this, JobLogActivity::class.java)); true
-            }
-            com.sunmi.printhub.R.id.action_logs -> {
-                startActivity(android.content.Intent(this, LogsActivity::class.java)); true
-            }
-            com.sunmi.printhub.R.id.action_update -> {
-                com.sunmi.printhub.update.AppUpdater.check(this, silent = false); true
-            }
-            com.sunmi.printhub.R.id.action_help -> {
-                showHelpDialog(); true
-            }
-            else -> super.onOptionsItemSelected(item)
+    private fun handleMenu(id: Int): Boolean = when (id) {
+        com.sunmi.printhub.R.id.action_settings -> { startActivity(android.content.Intent(this, SettingsActivity::class.java)); true }
+        com.sunmi.printhub.R.id.action_job_log -> { startActivity(android.content.Intent(this, JobLogActivity::class.java)); true }
+        com.sunmi.printhub.R.id.action_logs -> { startActivity(android.content.Intent(this, LogsActivity::class.java)); true }
+        com.sunmi.printhub.R.id.action_update -> { com.sunmi.printhub.update.AppUpdater.check(this, silent = false); true }
+        com.sunmi.printhub.R.id.action_help -> { showHelpDialog(); true }
+        else -> false
+    }
+
+    private fun applyBackground() {
+        if (!Hub.settings.useWallpaper) {
+            binding.root.setBackgroundColor(android.graphics.Color.BLACK)
+            return
+        }
+        // API 27+ would need READ_EXTERNAL_STORAGE; the target device is API 25.
+        try {
+            android.app.WallpaperManager.getInstance(this).drawable?.let { binding.root.background = it }
+        } catch (_: Throwable) {
         }
     }
 }

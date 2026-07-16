@@ -9,27 +9,48 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
         android:paddingLeft="16dp"
-        android:paddingRight="16dp"
+        android:paddingRight="6dp"
         android:paddingTop="14dp"
         android:paddingBottom="6dp">
 
-        <TextView
-            style="@style/WtBrand"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="WATCHTOWER" />
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/WtBrand"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WATCHTOWER" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="print hub"
+                android:textAllCaps="true"
+                android:letterSpacing="0.2"
+                android:textColor="@color/wt_muted"
+                android:textSize="11sp"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
 
         <TextView
+            android:id="@+id/menuButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="print hub"
-            android:textAllCaps="true"
-            android:letterSpacing="0.2"
-            android:textColor="@color/wt_muted"
-            android:textSize="11sp"
-            android:layout_marginTop="2dp" />
+            android:text="⋮"
+            android:textColor="@color/wt_text"
+            android:textSize="24sp"
+            android:paddingLeft="14dp"
+            android:paddingRight="14dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp"
+            android:background="?attr/selectableItemBackgroundBorderless" />
     </LinearLayout>
 
     <View

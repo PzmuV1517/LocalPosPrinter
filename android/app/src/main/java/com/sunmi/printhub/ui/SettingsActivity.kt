@@ -127,6 +127,7 @@ class SettingsActivity : AppCompatActivity() {
         binding.deviceSecretInput.setText(s.deviceSecret)
 
         binding.autoStart.isChecked = s.autoStart
+        binding.wallpaperSwitch.isChecked = s.useWallpaper
     }
 
     private fun saveAndRestart() {
@@ -155,6 +156,7 @@ class SettingsActivity : AppCompatActivity() {
         s.deviceSecret = binding.deviceSecretInput.text.toString().trim()
 
         s.autoStart = binding.autoStart.isChecked
+        s.useWallpaper = binding.wallpaperSwitch.isChecked
 
         PrintHubService.restart(this)
         toast("Saved, services restarted")
