@@ -142,7 +142,7 @@
             android:layout_height="wrap_content" android:hint="Device id (matches the dashboard)" android:inputType="text" />
 
         <EditText android:id="@+id/deviceSecretInput" android:layout_width="match_parent"
-            android:layout_height="wrap_content" android:hint="Device secret (sph_…) — required for the internet link" android:inputType="textPassword" />
+            android:layout_height="wrap_content" android:hint="Device secret (sph_…), required for the internet link" android:inputType="textPassword" />
 
         <Button
             android:id="@+id/scanQrButton"

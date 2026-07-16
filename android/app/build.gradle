@@ -47,7 +47,7 @@ dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4'
 
-    // UI — versions that link against compileSdk 31 and still run down to API 21+.
+    // UI, versions that link against compileSdk 31 and still run down to API 21+.
     implementation 'androidx.appcompat:appcompat:1.4.2'
     implementation 'androidx.core:core-ktx:1.7.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
@@ -66,10 +66,10 @@ dependencies {
 
     // Barcode / QR generation to Bitmap.
     implementation 'com.google.zxing:core:3.4.1'
-    // QR scanning (camera) for pairing — brings a self-contained scanner activity.
+    // QR scanning (camera) for pairing, brings a self-contained scanner activity.
     implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
 
-    // Sunmi's official printer library — correct AIDL + SunmiPrinterService wrapper.
+    // Sunmi's official printer library, correct AIDL + SunmiPrinterService wrapper.
     implementation 'com.sunmi:printerlibrary:1.0.18'
 
     // JSON.

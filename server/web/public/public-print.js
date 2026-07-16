@@ -1,4 +1,4 @@
-// Public print page — no session; authorises each action with a temporary password.
+// Public print page, no session; authorises each action with a temporary password.
 (function () {
   var $ = function (id) { return document.getElementById(id); }
 
@@ -46,7 +46,7 @@
     fetch('/print', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload()) })
       .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
       .then(function (res) {
-        if (res.ok) { setResult((res.d.message || 'Sent') + (res.d.usage_message ? ' — ' + res.d.usage_message : ''), true); }
+        if (res.ok) { setResult((res.d.message || 'Sent') + (res.d.usage_message ? ', ' + res.d.usage_message : ''), true); }
         else { setResult(res.d.error || 'Print failed', false); }
       })
       .catch(function () { setResult('Network error', false); });

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-install.py — one-shot installer for Sunmi Print Hub.
+install.py, one-shot installer for Sunmi Print Hub.
 
 Pulls the latest source from GitHub, compiles the debug APK, and installs it to the
 device connected over adb. Just run it:
@@ -9,7 +9,7 @@ device connected over adb. Just run it:
 
 Options:
     --from-release   Skip compiling; download and install the latest release APK instead
-                     (no Android SDK/JDK needed — only adb).
+                     (no Android SDK/JDK needed, only adb).
     --keep           Keep the build checkout afterwards (default keeps it too; this is a no-op
                      kept for clarity).
 
@@ -210,7 +210,7 @@ def java_env() -> dict:
 def compile_apk() -> str:
     android_dir = os.path.join(BUILD_DIR, "android")
     if not os.path.isdir(android_dir):
-        die("android/ not found in the checkout — repo layout changed?")
+        die("android/ not found in the checkout, repo layout changed?")
 
     sdk = find_sdk()
     if not sdk:
@@ -223,7 +223,7 @@ def compile_apk() -> str:
     ensure_sdk_packages(sdk)
     gradlew = ensure_wrapper(android_dir)
 
-    log("compiling debug APK (first run downloads Gradle + dependencies — be patient)…")
+    log("compiling debug APK (first run downloads Gradle + dependencies, be patient)…")
     run([gradlew, ":app:assembleDebug", "--no-daemon"], cwd=android_dir, env=java_env())
 
     apk = os.path.join(android_dir, "app", "build", "outputs", "apk", "debug", "app-debug.apk")
@@ -258,7 +258,7 @@ def main() -> None:
     ap.add_argument("--keep", action="store_true", help="(no-op) keep the build checkout")
     args = ap.parse_args()
 
-    print("\033[1mSunmi Print Hub — installer\033[0m")
+    print("\033[1mSunmi Print Hub, installer\033[0m")
 
     if args.from_release:
         apk = download_release_apk()
