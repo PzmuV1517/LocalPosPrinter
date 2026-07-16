@@ -19,6 +19,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -1000,6 +1002,8 @@ async def do_alert(request: Request) -> JSONResponse:
 
 async def _render_and_submit(payload: dict, on_delivered=None) -> bool:
     """Render to exact pixels and push to the device (trusted HMAC channel — no per-job password)."""
+    if payload.get("format") == "status":
+        payload = _status_payload(str(payload.get("by") or payload.get("service") or ""))
     img = rendermod.render(payload, print_width())
     job = {
         "format": "image",
@@ -1050,6 +1054,12 @@ async def _print_payload(payload: dict, authed_device=None, authed_session=False
         if not row or row["revoked"] or (row["max_uses"] - row["used"]) <= 0:
             return JSONResponse({"error": "Invalid password or no usages left"}, status_code=401)
         user, unlimited, temp_pw = row["user"], False, provided
+
+    # STATUS reveals host/scout internals — never allow it on a public (temp-password) print.
+    if payload.get("format") == "status":
+        if temp_pw:
+            return JSONResponse({"error": "STATUS is not available on public prints"}, status_code=403)
+        payload = _status_payload(str(payload.get("by") or payload.get("service") or user))
 
     # Temp-password (public) prints are size-capped and image-free to protect the paper roll.
     if temp_pw:
@@ -1119,6 +1129,140 @@ def _log_to_alert_payload(device_id: str, severity: str, service: str, message: 
         "sent_at": ts,
         "print_mode": "receipt",
     }
+
+
+# ---------------------------------------------------------------------------
+# STATUS — a printed system report (printer + host + watchdog + every scout).
+# The design carries the "terminal readout" feel; the content is all live data.
+# ---------------------------------------------------------------------------
+def _dur(secs: float) -> str:
+    s = int(secs)
+    d, s = divmod(s, 86400)
+    h, s = divmod(s, 3600)
+    m, _ = divmod(s, 60)
+    return f"{d}d {h}h" if d else (f"{h}h {m}m" if h else f"{m}m")
+
+
+def _ago(ts) -> str:
+    if not ts:
+        return "never"
+    s = int(time.time() - ts)
+    for unit, n in (("s", 60), ("m", 60), ("h", 24)):
+        if s < n:
+            return f"{s}{unit} ago"
+        s //= n
+    return f"{s}d ago"
+
+
+def _host_lines() -> "list[str]":
+    out = []
+    try:
+        out.append(f"> node : {socket.gethostname()}")
+    except Exception:
+        pass
+    try:
+        with open("/proc/uptime") as f:
+            out.append(f"> up   : {_dur(float(f.read().split()[0]))}")
+    except Exception:
+        pass
+    try:
+        la = os.getloadavg()
+        out.append(f"> load : {la[0]:.2f} {la[1]:.2f} {la[2]:.2f}")
+    except Exception:
+        pass
+    try:
+        info = {}
+        with open("/proc/meminfo") as f:
+            for line in f:
+                k, _, v = line.partition(":")
+                info[k] = int(v.split()[0])
+        total, avail = info.get("MemTotal", 0) // 1024, info.get("MemAvailable", 0) // 1024
+        if total:
+            out.append(f"> mem  : {total - avail}/{total} MB")
+    except Exception:
+        pass
+    try:
+        du = shutil.disk_usage("/")
+        out.append(f"> disk : {du.used // 10**9}/{du.total // 10**9} GB ({du.used * 100 // du.total}%)")
+    except Exception:
+        pass
+    try:
+        rss = ""
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS"):
+                    rss = f"{int(line.split()[1]) // 1024} MB"
+                    break
+        out.append(f"> proc : watchtower pid {os.getpid()} rss {rss}")
+    except Exception:
+        pass
+    return out
+
+
+def _build_status_report(by: str) -> str:
+    now = time.time()
+    rule = "/" * 24
+    L = [rule, "   S T A T U S",
+         "   " + time.strftime("%Y-%m-%d %H:%M:%S"),
+         f"   req: {by or 'unknown'}", rule]
+
+    # Printer link
+    link = "CONFER" if relay.any_confer() else ("ONLINE" if relay.is_connected() else "OFFLINE")
+    L += ["[ PRINTER ]",
+          f"> link : {link}",
+          f"> queue: {sum(len(q) for q in relay.pending.values())} job(s)",
+          f"> width: {print_width()} px", ""]
+
+    # Host
+    L += ["[ HOST ]"] + _host_lines() + [""]
+
+    # Watchdog (dead-man's-switch)
+    devices = db.list_devices()
+    armed = [d for d in devices if not d["revoked"] and (d.get("heartbeat_secs") or 0) > 0]
+    silent = [d["id"] for d in devices if d["id"] in _silent_devices]
+    L += ["[ WATCHDOG ]",
+          f"> armed : {len(armed)} device(s)",
+          f"> silent: {', '.join(silent) if silent else 'none'}", ""]
+
+    # Scouts
+    active = [d for d in devices if not d["revoked"]]
+    counts = db.severity_counts()
+    L.append(f"[ SCOUTS ] ({len(active)})")
+    if not active:
+        L.append("> none paired")
+    for d in active:
+        meta = d.get("meta") or {}
+        hb = d.get("heartbeat_secs") or 0
+        onl = agents.online(d["id"]) or bool(
+            d["last_seen_at"] and now - d["last_seen_at"] < max(90, hb * 2))
+        L.append(f"- {d['id']}  [{'UP' if onl else 'DOWN'}]  v{meta.get('scout_version', '?')}")
+        if d.get("name"):
+            L.append(f"  {d['name']}")
+        if meta.get("host"):
+            L.append(f"  host: {meta['host']}")
+        m = meta.get("metrics") or {}
+        stats = []
+        if m.get("load1") is not None:
+            stats.append(f"load {m['load1']}/{m.get('cpus', '?')}")
+        if m.get("mem_pct") is not None:
+            stats.append(f"mem {m['mem_pct']}%")
+        if m.get("disk_pct") is not None:
+            stats.append(f"disk {m['disk_pct']}%")
+        if m.get("temp_c") is not None:
+            stats.append(f"{m['temp_c']}C")
+        if stats:
+            L.append("  " + "  ".join(stats))
+        c = counts.get(d["id"], {})
+        err = sum(c.get(s, 0) for s in ("emerg", "alert", "crit", "err"))
+        L.append(f"  seen {_ago(d['last_seen_at'])}" + (f" | hb {hb}s" if hb else ""))
+        L.append(f"  24h: err {err} / warn {c.get('warning', 0)}")
+    L.append(rule)
+    return "\n".join(L)
+
+
+def _status_payload(by: str) -> dict:
+    return {"format": "plain", "text": _build_status_report(by),
+            "print_mode": "receipt", "text_size": 22}
 
 
 # Dedup so a flapping condition doesn't spam email/print repeatedly.

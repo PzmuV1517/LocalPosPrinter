@@ -28,3 +28,6 @@ server/data/
 # Frontend build
 server/web/node_modules/
 server/web/.vite/
+
+# Scratch / local-only experiments (never tracked)
+playground/
