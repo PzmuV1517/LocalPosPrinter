@@ -1,17 +1,9 @@
-"""
-Watchtower as an MQTT **client** (as opposed to :mod:`mqtt_bridge`, which runs a broker here).
+"""Watchtower as an MQTT client (mqtt_bridge runs a broker instead).
 
-This connects OUT to an existing broker you already run, e.g. Home Assistant's Mosquitto, and:
-
-  * publishes **Home Assistant discovery** so a "Watchtower Printer" device appears automatically
-    (a ``notify`` entity whose command relays to the printer),
-  * subscribes to ``<prefix>print`` / ``<prefix>alert`` and relays those to the printer over the
-    existing WebSocket (same ``on_message`` path as the built-in broker),
-  * publishes a retained ``<prefix>status`` availability topic (with an ``offline`` LWT).
-
-Runs *alongside* the built-in broker, pick either or both in Settings. The broker password we
-need to authenticate to your broker is stored **encrypted** (SecretBox), since we must send it.
-Every failure is caught and retried so a broker being down never affects the main server.
+Connects out to an external broker, publishes Home Assistant discovery so a "Watchtower Printer"
+device appears, subscribes to <prefix>print/alert and relays to the printer, keeps a retained
+<prefix>status with an offline LWT. Runs alongside the hosted broker. The broker password is
+stored encrypted (recoverable, since it must be sent). Failures retry, never fatal.
 """
 
 from __future__ import annotations
@@ -30,18 +22,16 @@ NODE_ID = "watchtower_printer"
 
 
 def notify_discovery(prefix: str) -> tuple[str, str, str]:
-    """Return (config_topic, payload_json, status_topic) for the Home Assistant notify device.
+    """(config_topic, payload_json, status_topic) for the HA notify device.
 
-    Shared by both MQTT modes (hosted broker and outbound client) so they publish the identical
-    device, HA dedupes on the unique_id, so running both never makes two printers.
+    Shared by both MQTT modes; HA dedupes on unique_id, so running both never makes two devices.
     """
     print_topic, status_topic = f"{prefix}print", f"{prefix}status"
     device = {
         "identifiers": [NODE_ID], "name": "Watchtower Printer",
         "manufacturer": "Watchtower", "model": "MQTT bridge",
     }
-    # HA's notify title/message map onto our title/text. No password needed, the broker
-    # connection is already authenticated and Watchtower relays as a trusted source.
+    # No password in the payload: the broker connection is authenticated, the relay is trusted.
     command_template = (
         "{\"format\":\"{{ data.format | default('plain') }}\","
         "\"print_mode\":\"{{ data.print_mode | default('receipt') }}\","

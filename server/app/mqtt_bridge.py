@@ -1,18 +1,13 @@
-"""
-Watchtower-hosted MQTT broker + bridge.
+"""Watchtower-hosted MQTT broker and bridge.
 
-Runs an MQTT broker inside the server (amqtt) so external systems (Home Assistant, scripts, …)
-publish print/alert jobs to reliable server infrastructure instead of to the phone. A built-in
-subscriber relays those messages to the printer over the existing WebSocket, the app just
-receives print commands, exactly like manual/error prints.
+Runs an embedded amqtt broker so external systems (Home Assistant, scripts) publish print/alert
+jobs to the server rather than the phone. A subscriber relays them to the printer, same path as
+manual or error prints.
 
-Publish JSON to:
-  <prefix>print  , a print payload, e.g. {"format":"plain","text":"hello"}
-  <prefix>alert  , {"alert_type":"crit","service":"backup","message":"disk full"}
-
-Auth: set a username/password in Settings (stored hashed) → external clients must authenticate.
-With no password it allows anonymous connections (LAN/behind-firewall only). Everything is
-guarded so a broker failure never takes down the main server.
+Publish JSON to <prefix>print ({"format":"plain","text":"hi"}) or <prefix>alert
+({"alert_type":"crit","service":"backup","message":"disk full"}). With a username/password set
+in Settings (stored hashed) clients must authenticate, with none it allows anonymous connections
+(LAN only). Broker failures never take down the main server.
 """
 
 from __future__ import annotations

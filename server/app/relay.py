@@ -1,9 +1,6 @@
-"""
-Connected-device tracking + pending-job queue for the /messages WebSocket relay.
+"""Connected-printer tracking and pending-job queue for the /messages relay.
 
-Single-device for now, but the structures carry a ``device_id`` so adding real routing
-later isn't a rewrite. If no device is connected when a job is submitted, it's queued
-in memory and delivered on the next connect rather than dropped.
+A job submitted with no printer connected is queued in memory and delivered on next connect.
 """
 
 from __future__ import annotations
@@ -63,8 +60,7 @@ class Relay:
             await self._flush(client.device_id)
 
     async def close_all(self, code: int = 1012) -> None:
-        """Close every device socket (1012 = Service Restart) so clients reconnect immediately
-        on a graceful shutdown/restart instead of waiting to notice a dead connection."""
+        """Close every socket (1012 = service restart) so printers reconnect at once."""
         for client in list(self.clients):
             try:
                 await client.ws.close(code=code)
@@ -73,13 +69,10 @@ class Relay:
         self.clients.clear()
 
     async def submit(self, job: dict, device_id: str = "default", on_delivered=None) -> bool:
-        """Send a job to the target device, or queue it if none is connected.
+        """Send to the printer, or queue if none is connected. Returns True if delivered now.
 
-        [on_delivered], if given, is called exactly once when the job is actually handed to
-        a device, immediately here, or later from _flush, never if it only gets queued.
-        This lets callers deduct a password use only when the print really goes through.
-
-        Returns True if delivered immediately, False if queued.
+        on_delivered fires once, only when the job actually reaches a printer (here or from
+        _flush), never on queue, so a temp-password use is spent only on a real print.
         """
         target = next((c for c in self.clients if c.device_id == device_id and not c.confer), None)
         if target is None:
