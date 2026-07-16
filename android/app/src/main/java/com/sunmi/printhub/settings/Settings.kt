@@ -5,7 +5,7 @@ import android.content.SharedPreferences
 import kotlin.random.Random
 
 /**
- * All app configuration, backed by SharedPreferences. Fine for a hobby LAN tool —
+ * All app configuration, backed by SharedPreferences. Fine for a hobby LAN tool -
  * no need for anything heavier. The single access code is checked identically across
  * HTTP, MQTT and the internet listener.
  */
@@ -30,7 +30,7 @@ class Settings(context: Context) {
         get() = prefs.getInt(K_WIDTH, 384)
         set(v) = prefs.edit().putInt(K_WIDTH, v).apply()
 
-    /** "receipt" | "label" — used when a request omits print_mode. */
+    /** "receipt" | "label", used when a request omits print_mode. */
     var defaultPrintMode: String
         get() = prefs.getString(K_DEFAULT_MODE, "receipt") ?: "receipt"
         set(v) = prefs.edit().putString(K_DEFAULT_MODE, v).apply()
@@ -100,7 +100,7 @@ class Settings(context: Context) {
         return id
     }
 
-    // ---- Confer (private chat) — token persists so the user stays logged in across restarts ----
+    // ---- Confer (private chat), token persists so the user stays logged in across restarts ----
     // The Confer server is configured separately from the internet listener: chat can live on a
     // communally-agreed Watchtower that is a different machine than the one handling prints/logs.
     // Blank falls back to the internet-listener domain (the common single-server case).

@@ -8,8 +8,8 @@ Two distinct needs, handled two different ways on purpose:
   comes from the ``SERVER_SECRET_KEY`` env var, or an auto-generated ``server.key`` under
   ``DATA_DIR`` (created 0600). Rotating that key invalidates stored device secrets.
 
-- **Passwords** (the temporary limited-use ones) never need to be recovered — we only ever
-  verify them — so they are one-way **hashed** with scrypt + a per-password salt.
+- **Passwords** (the temporary limited-use ones) never need to be recovered, we only ever
+  verify them, so they are one-way **hashed** with scrypt + a per-password salt.
 
 Both comparisons use ``hmac.compare_digest`` to avoid leaking length/prefix via timing.
 """
@@ -25,7 +25,7 @@ import secrets
 from cryptography.fernet import Fernet, InvalidToken
 
 # ---------------------------------------------------------------------------
-# Secret encryption (recoverable) — Fernet
+# Secret encryption (recoverable), Fernet
 # ---------------------------------------------------------------------------
 
 
@@ -70,7 +70,7 @@ class SecretBox:
         self._fernet = Fernet(self._key)
 
     def derive(self, label: str) -> str:
-        """A deterministic subkey (hex) from the server key — for the temp-password lookup
+        """A deterministic subkey (hex) from the server key, for the temp-password lookup
         hash and the session-token signing key, so everything hangs off one root secret."""
         return hmac.new(self._key, label.encode(), hashlib.sha256).hexdigest()
 
@@ -85,7 +85,7 @@ class SecretBox:
 
 
 # ---------------------------------------------------------------------------
-# Password hashing (one-way) — scrypt
+# Password hashing (one-way), scrypt
 # ---------------------------------------------------------------------------
 
 _SCRYPT_N = 2**14

@@ -20,7 +20,7 @@ export const getToken = (): string | null => {
   return t
 }
 export const setToken = (t: string) => { localStorage.setItem(TOKEN_KEY, t); bridge()?.saveToken?.(t) }
-// Clear local token only (used on a transient 401 — must NOT revoke the server session).
+// Clear local token only (used on a transient 401, must NOT revoke the server session).
 export const clearToken = () => { localStorage.removeItem(TOKEN_KEY); bridge()?.saveToken?.('') }
 // Explicit sign-out: revoke the server session too.
 export async function logout() {

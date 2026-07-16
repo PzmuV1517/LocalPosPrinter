@@ -12,7 +12,7 @@ import com.sunmi.printhub.core.ConferManager
 
 /**
  * On-screen mirror of the chat (the authoritative copy prints on paper). Your messages sit on the
- * right; others' on the left, showing the sender name. Images are noted with a small marker — the
+ * right; others' on the left, showing the sender name. Images are noted with a small marker, the
  * full picture goes to the print head, not this preview list.
  */
 class ConferMessageAdapter(private val myUsername: () -> String) :

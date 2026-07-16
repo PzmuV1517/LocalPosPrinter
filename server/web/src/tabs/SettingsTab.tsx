@@ -129,16 +129,16 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     }
     if (mqttCPw) payload.password = mqttCPw
     const res = await guard(api.setConfig({ mqtt_client: payload }))
-    if (res?.ok) { setMqttCMsg({ ok: true, text: mqttC.enabled ? 'Saved — see link status below.' : 'Saved (client off).' }); setMqttCPw(''); load() }
+    if (res?.ok) { setMqttCMsg({ ok: true, text: mqttC.enabled ? 'Saved, see link status below.' : 'Saved (client off).' }); setMqttCPw(''); load() }
     else setMqttCMsg({ ok: false, text: 'Failed.' })
   }
 
   async function waitForRestart() {
     for (let i = 0; i < 60; i++) {
       await new Promise((r) => setTimeout(r, 1000))
-      if (await api.serverUp()) { setUpdateLog((l) => (l ?? '') + '\nServer back up — reloading…'); setTimeout(() => location.reload(), 900); return }
+      if (await api.serverUp()) { setUpdateLog((l) => (l ?? '') + '\nServer back up, reloading…'); setTimeout(() => location.reload(), 900); return }
     }
-    setUpdateLog((l) => (l ?? '') + '\nStill waiting — reload manually once it’s back.')
+    setUpdateLog((l) => (l ?? '') + '\nStill waiting, reload manually once it’s back.')
   }
   async function doUpdate() {
     if (!confirm('Pull the latest code from main and restart the server now?')) return
@@ -146,7 +146,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     try {
       const d = await guard(api.updateServer())
       if (!d) { setUpdating(false); return }
-      const tail = !d.ok ? '✗ Update failed — see log above.'
+      const tail = !d.ok ? '✗ Update failed, see log above.'
         : d.changed ? `✓ Updated ${d.before} → ${d.after}. Restarting…` : '✓ Already up to date.'
       setUpdateLog((d.log || '').trim() + '\n\n' + tail)
       if (d.restarting) waitForRestart()
@@ -203,7 +203,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
         </div>
         <div className="row">
           <div><label>Username</label><input value={notify.username} autoComplete="off" placeholder="watchdog@andreibanu.com" onChange={(e) => N({ username: e.target.value })} /></div>
-          <div><label>Password {notify.has_password && '(set — blank keeps)'}</label><input type="password" value={smtpPw} autoComplete="new-password" onChange={(e) => setSmtpPw(e.target.value)} /></div>
+          <div><label>Password {notify.has_password && '(set, blank keeps)'}</label><input type="password" value={smtpPw} autoComplete="new-password" onChange={(e) => setSmtpPw(e.target.value)} /></div>
         </div>
         <div className="row">
           <div><label>From</label><input value={notify.from_addr} placeholder="watchdog@andreibanu.com" onChange={(e) => N({ from_addr: e.target.value })} /></div>
@@ -237,7 +237,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
         </div>
         <div className="row">
           <div><label>Username (blank = anonymous)</label><input value={mqtt.username} autoComplete="off" onChange={(e) => M({ username: e.target.value })} /></div>
-          <div><label>Password {mqtt.has_password && '(set — blank keeps)'}</label><input type="password" value={mqttPw} autoComplete="new-password" onChange={(e) => setMqttPw(e.target.value)} /></div>
+          <div><label>Password {mqtt.has_password && '(set, blank keeps)'}</label><input type="password" value={mqttPw} autoComplete="new-password" onChange={(e) => setMqttPw(e.target.value)} /></div>
         </div>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none', marginTop: 8 }}>
           <input type="checkbox" checked={mqtt.discovery} onChange={(e) => M({ discovery: e.target.checked })} style={{ width: 'auto' }} /> Publish HA discovery (auto-creates the device for any HA that connects here)
@@ -255,7 +255,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           Instead of hosting a broker, Watchtower connects OUT to a broker you already run (e.g. Home Assistant's
           Mosquitto), publishes Home Assistant <b>auto-discovery</b> so a <span className="mono">Watchtower Printer</span> device
           appears on its own, and relays anything published to <span className="mono">{mqttC.prefix}print</span> to the printer.
-          Runs alongside the hosted broker — use either or both.
+          Runs alongside the hosted broker, use either or both.
         </p>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none' }}>
           <input type="checkbox" checked={mqttC.enabled} onChange={(e) => MC({ enabled: e.target.checked })} style={{ width: 'auto' }} /> Enable MQTT client
@@ -266,7 +266,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
         </div>
         <div className="row">
           <div><label>Username</label><input value={mqttC.username} autoComplete="off" onChange={(e) => MC({ username: e.target.value })} /></div>
-          <div><label>Password {mqttC.has_password && '(set — blank keeps)'}</label><input type="password" value={mqttCPw} autoComplete="new-password" onChange={(e) => setMqttCPw(e.target.value)} /></div>
+          <div><label>Password {mqttC.has_password && '(set, blank keeps)'}</label><input type="password" value={mqttCPw} autoComplete="new-password" onChange={(e) => setMqttCPw(e.target.value)} /></div>
         </div>
         <div className="row">
           <div><label>Topic prefix</label><input value={mqttC.prefix} onChange={(e) => MC({ prefix: e.target.value })} /></div>
@@ -286,11 +286,11 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
             <span className={`dot ${mqttCStat.connected ? 'on' : ''}`} />{' '}
             {mqttCStat.connected
               ? <b>Connected to your broker.</b>
-              : <span>Not connected{mqttCStat.last_error ? <> — <span className="mono">{mqttCStat.last_error}</span></> : ' — connecting/retrying…'}</span>}
+              : <span>Not connected{mqttCStat.last_error ? <>, <span className="mono">{mqttCStat.last_error}</span></> : ', connecting/retrying…'}</span>}
           </div>
         )}
         <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
-          Point Home Assistant's MQTT integration at the same broker. Then call <span className="mono">notify.watchtower_printer</span> —
+          Point Home Assistant's MQTT integration at the same broker. Then call <span className="mono">notify.watchtower_printer</span> -
           no password needed (Watchtower relays as a trusted source). The printer must be online for prints to actually land.
         </p>
       </div>
@@ -336,7 +336,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
       <div className="card">
         <h2>Server updates</h2>
         <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
-          Pull the latest code from <span className="mono">main</span> and restart, or just restart — no manual git pull.
+          Pull the latest code from <span className="mono">main</span> and restart, or just restart, no manual git pull.
           (Needs a supervisor that restarts on exit: systemd <span className="mono">Restart=always</span> / Docker <span className="mono">restart: unless-stopped</span>.)
         </p>
         <div className="row" style={{ flexWrap: 'wrap' }}>

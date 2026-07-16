@@ -14,7 +14,7 @@ import com.sunmi.printhub.databinding.ActivityLogsBinding
 import java.util.concurrent.Executors
 
 /**
- * In-app log viewer — reads this app's own logcat output so diagnosing prints/connections
+ * In-app log viewer, reads this app's own logcat output so diagnosing prints/connections
  * doesn't need a computer. On Android an app can read its own log entries without any
  * permission, so no READ_LOGS is required.
  */
@@ -27,7 +27,7 @@ class LogsActivity : AppCompatActivity() {
     /** When true, show only this app's own tags (no Qualcomm/GPU/system noise). */
     private var appOnly = true
 
-    // The app's own log tags — everything meaningful the print/network path writes.
+    // The app's own log tags, everything meaningful the print/network path writes.
     private val appTags = arrayOf(
         "PrinterManager", "PrintDispatcher", "HttpServer",
         "MqttManager", "InternetListener", "PrintHubService",
@@ -88,9 +88,9 @@ class LogsActivity : AppCompatActivity() {
             }
         }
         return if (appOnly) {
-            "(no app log lines yet — bind the printer or press Print, then Refresh)"
+            "(no app log lines yet, bind the printer or press Print, then Refresh)"
         } else {
-            "(no log output — try Refresh, or trigger a print first)"
+            "(no log output, try Refresh, or trigger a print first)"
         }
     }
 

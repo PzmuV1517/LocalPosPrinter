@@ -75,7 +75,7 @@ class RenderError(ValueError):
 
 
 # ---------------------------------------------------------------------------
-# Fonts — one explicit bundled TTF for determinism regardless of host OS.
+# Fonts, one explicit bundled TTF for determinism regardless of host OS.
 # ---------------------------------------------------------------------------
 _HERE = os.path.dirname(__file__)
 _FONT_CANDIDATES = [
@@ -107,7 +107,7 @@ _font_cache: dict = {}
 # Alert fonts, selectable by number. Drop the TTFs in app/fonts/ to activate 1/3/4;
 # until then they gracefully fall back to the built-in mono font (2).
 _ALERT_FONT_FILES = {
-    1: None,                        # built-in mono (DejaVuSansMono / Menlo) — default
+    1: None,                        # built-in mono (DejaVuSansMono / Menlo), default
     2: "Jersey10-Regular.ttf",      # pixel font
     3: "Jacquard12-Regular.ttf",    # pixel font
     4: "Doto-Regular.ttf",          # dot-matrix font
@@ -245,7 +245,7 @@ def _center_on_white(content: Image.Image, w: int) -> Image.Image:
 # Format renderers
 # ---------------------------------------------------------------------------
 # Border character sets: (top-left, horizontal, top-right, vertical, bottom-left, bottom-right).
-# Plain repeating-character primitives — nothing copied from any art collection.
+# Plain repeating-character primitives, nothing copied from any art collection.
 BORDERS = {
     "dashes":   ("+", "-", "+", "|", "+", "+"),
     "equals":   ("+", "=", "+", "|", "+", "+"),
@@ -450,7 +450,7 @@ def _to_1bit(img: Image.Image, payload: dict) -> Image.Image:
         except (TypeError, ValueError):
             t = 128
         return img.point(lambda p: 255 if p >= t else 0).convert("1")
-    return img.convert("1")  # Floyd–Steinberg (Pillow default dither) — best for photos
+    return img.convert("1")  # Floyd–Steinberg (Pillow default dither), best for photos
 
 
 # ---------------------------------------------------------------------------
@@ -502,12 +502,12 @@ def _qrcode(data: str, w: int) -> Image.Image:
 
 
 # ---------------------------------------------------------------------------
-# MUIE — Minimal Unified Incident Envelope (alert format)
+# MUIE, Minimal Unified Incident Envelope (alert format)
 # ---------------------------------------------------------------------------
 def _fmt_time(value) -> str:
     """Format a timestamp. Accepts epoch seconds (number/str) or a preformatted string."""
     if value is None or value == "":
-        return "—"
+        return "-"
     try:
         return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(value)))
     except (TypeError, ValueError):

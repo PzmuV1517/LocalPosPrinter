@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Outbound WebSocket client to the Watchtower server's /messages relay. The connection is
- * authenticated with **HMAC** (device id + secret, issued in the dashboard) — the secret never
+ * authenticated with **HMAC** (device id + secret, issued in the dashboard), the secret never
  * appears in the URL. Because the channel itself is authenticated, pushed jobs are trusted and
  * printed without re-checking a per-job password.
  *

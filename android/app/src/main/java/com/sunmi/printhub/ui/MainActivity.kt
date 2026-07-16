@@ -88,7 +88,7 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
         // Ensure the network channels are running.
         PrintHubService.start(this)
 
-        // Ask the OS to stop killing us for "battery" — a POS hub must stay listening 24/7.
+        // Ask the OS to stop killing us for "battery", a POS hub must stay listening 24/7.
         requestIgnoreBatteryOptimizations()
 
         // Quietly check GitHub for a newer release; prompts only if one is available.
@@ -99,7 +99,7 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
     }
 
     // ---------------------------------------------------------------------------
-    // Tabs (Print | Confer) — simple visibility toggle, no fragments.
+    // Tabs (Print | Confer), simple visibility toggle, no fragments.
     // ---------------------------------------------------------------------------
     private fun setupTabs() {
         binding.tabPrint.setOnClickListener { showTab(confer = false) }
@@ -180,8 +180,8 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
     private fun updateConferStatus() {
         binding.conferStatus.text = when {
             !ConferManager.conferModeOn -> "Print mode"
-            ConferManager.connected -> "In Confer mode — connected"
-            else -> "Confer mode — connecting…"
+            ConferManager.connected -> "In Confer mode, connected"
+            else -> "Confer mode, connecting…"
         }
     }
 
@@ -339,7 +339,7 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
 
     private fun showHelpDialog() {
         val msg = """
-            Inline tags — put each on its own line inside the Text field (text formats only):
+            Inline tags, put each on its own line inside the Text field (text formats only):
 
             @#@divider="-="
               Repeats the pattern to fill the line width. The pattern can be any
@@ -352,7 +352,7 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
         """.trimIndent()
 
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Help — inline tags")
+            .setTitle("Help, inline tags")
             .setMessage(msg)
             .setPositiveButton("Divider gallery") { _, _ ->
                 openUrl("https://www.asciiart.eu/ascii-dividers/gallery")

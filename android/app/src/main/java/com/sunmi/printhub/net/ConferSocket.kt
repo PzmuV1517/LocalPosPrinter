@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 /**
  * Dedicated WebSocket to the **Confer server** (which may differ from the print/internet-listener
  * server). Authenticated by the Confer participant token in the query string, so it needs no HMAC
- * device identity — a printer can chat on a communally-agreed server it doesn't print through.
+ * device identity, a printer can chat on a communally-agreed server it doesn't print through.
  *
  * Receives live messages + offline catch-up; sends read receipts. Reconnects with backoff while
  * Confer mode is on.

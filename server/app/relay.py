@@ -80,7 +80,7 @@ class Relay:
         """Send a job to the target device, or queue it if none is connected.
 
         [on_delivered], if given, is called exactly once when the job is actually handed to
-        a device — immediately here, or later from _flush — never if it only gets queued.
+        a device, immediately here, or later from _flush, never if it only gets queued.
         This lets callers deduct a password use only when the print really goes through.
 
         Returns True if delivered immediately, False if queued.

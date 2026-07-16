@@ -22,7 +22,7 @@ import java.util.concurrent.Executors
  *  * **Screen off**             → messages from *subscribed* chats/folders print, with a labelled
  *                                  separator whenever the source chat changes.
  *
- * Sending doesn't print locally — the server echoes every message back over the socket, so a sent
+ * Sending doesn't print locally, the server echoes every message back over the socket, so a sent
  * message prints through the exact same path as an incoming one (yours simply renders right-aligned).
  */
 object ConferManager {
@@ -185,7 +185,7 @@ object ConferManager {
             onConnected = { c -> connected = c; main.post { listener?.onState() } },
             onAuthFailed = {
                 settings().clearConfer()
-                main.post { listener?.onError("Confer session expired — log in again"); listener?.onState() }
+                main.post { listener?.onError("Confer session expired, log in again"); listener?.onState() }
             },
         )
         socket = s

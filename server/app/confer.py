@@ -1,11 +1,11 @@
 """
-Confer — the private, printer-native chat that rides on the Watchtower server.
+Confer, the private, printer-native chat that rides on the Watchtower server.
 
 Design (see the three product decisions):
 
 * **Server-trusted.** Every participant authenticates; traffic is TLS/WSS; message bodies are
   encrypted at rest by the DB layer (``SecretBox``). The server owner (admin) can read and send
-  in every chat, and offline devices catch up on reconnect — so this is deliberately *not* E2E.
+  in every chat, and offline devices catch up on reconnect, so this is deliberately *not* E2E.
 * **Per-user accounts.** The owner issues ``confer_users`` (scrypt-hashed). A login mints an
   ordinary DB session with ``sub = "confer:<id>"``, so it survives restarts like the dashboard's.
 * **Persisted history with retention**, pruned alongside logs.

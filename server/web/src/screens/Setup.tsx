@@ -34,7 +34,7 @@ export function Setup({ onAuthed }: { onAuthed: (token: string) => void }) {
       <div className="brand">WATCHTOWER</div>
       <div className="tag">first-run setup</div>
       <form className="panel" onSubmit={submit} autoComplete="on">
-        <p className="stepnote">No configuration found. Set this up once — it's saved to the server's database and survives pulls &amp; updates.</p>
+        <p className="stepnote">No configuration found. Set this up once, it's saved to the server's database and survives pulls &amp; updates.</p>
         <label>Username</label>
         <input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" autoCapitalize="none" spellCheck={false} />
         <label>Password</label>

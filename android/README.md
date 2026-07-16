@@ -1,4 +1,4 @@
-# Sunmi Print Hub — Android app
+# Sunmi Print Hub, Android app
 
 Kotlin app for the **Sunmi V2 Pro** (SUNMI OS / Android 7.1, API 25).
 
@@ -65,7 +65,7 @@ the full set.
 The foreground service holds a **partial `WakeLock`** and a **high-perf `WifiLock`** for its
 whole lifetime (`service/PrintHubService.kt`). This keeps the CPU and Wi-Fi radio awake when
 the screen is off / the device is locked, so the internet WebSocket listener and MQTT client
-stay connected and pushed jobs still print. Printing itself needs no screen — the Woyou AIDL
+stay connected and pushed jobs still print. Printing itself needs no screen, the Woyou AIDL
 service and bitmap rendering run regardless of lock state.
 
 This is deliberate for a mains-powered POS hub. Combine it with the **"Ignore battery
@@ -73,7 +73,7 @@ optimizations"** shortcut in Settings and **Start on boot** for a truly unattend
 
 ## Notes
 
-- `targetSdk` is intentionally **28**, `minSdk 25` — see the root README for why.
+- `targetSdk` is intentionally **28**, `minSdk 25`, see the root README for why.
 - Recommended image size: keep source images near the **384px** print width so base64
   payloads stay well under typical MQTT broker limits (often ≤1 MB). The HTTP endpoint
   caps bodies at 2 MB.

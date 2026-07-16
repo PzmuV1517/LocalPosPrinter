@@ -158,7 +158,7 @@ class MqttManager(private val context: Context) {
     }
 
     private fun publishHaDiscovery() {
-        // Notify entity — maps HA's title+message straight onto our title/text fields, with
+        // Notify entity, maps HA's title+message straight onto our title/text fields, with
         // the access password baked into the command_template so notify.sunmi_printhub just works.
         val pw = settings.accessPassword
         val commandTemplate = buildString {
@@ -187,7 +187,7 @@ class MqttManager(private val context: Context) {
         availabilityBlock(notifyCfg)
         publish("homeassistant/notify/$NODE_ID/config", notifyCfg.toString(), retained = true)
 
-        // Sensor entity — last job status, with format/timestamp as attributes.
+        // Sensor entity, last job status, with format/timestamp as attributes.
         val sensorCfg = JSONObject()
             .put("name", "Sunmi PrintHub Last Job")
             .put("unique_id", "${NODE_ID}_lastjob")

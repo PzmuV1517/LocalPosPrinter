@@ -3,7 +3,7 @@ Authentication for the companion server.
 
 Two independent mechanisms:
 
-1. **HMAC request signatures** (machine clients — Scouts, print services, the printer app).
+1. **HMAC request signatures** (machine clients, Scouts, print services, the printer app).
    Every request carries ``X-Device-Id``, ``X-Timestamp``, ``X-Nonce`` and ``X-Signature``.
    The signature is ``HMAC-SHA256(device_secret, signing_string)`` over the method, path and a
    SHA-256 of the raw body, so a proxy that logs the URL learns nothing reusable. Requests with
@@ -11,7 +11,7 @@ Two independent mechanisms:
 
 2. **Session tokens** (the human operator, in the browser). ``login`` verifies the master
    password and mints a short HMAC-signed bearer token; ``verify_session`` checks it. The
-   browser keeps the token in localStorage — the master password itself never persists there.
+   browser keeps the token in localStorage, the master password itself never persists there.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class Auth:
 
     # ---- master credentials (username + scrypt-hashed password; never stored in the clear) ----
     def is_master(self, password: Optional[str]) -> bool:
-        """Password-only check — authorises API printing (temp-password parent)."""
+        """Password-only check, authorises API printing (temp-password parent)."""
         if not password:
             return False
         stored = self.db.get_config("master_pw_hash")
@@ -93,7 +93,7 @@ class Auth:
 
     def verify_session(self, token: Optional[str]) -> bool:
         # Only the dashboard/admin session counts as an authenticated operator. Confer participant
-        # logins live in the same sessions table tagged ``confer:<id>`` — they must NOT pass here,
+        # logins live in the same sessions table tagged ``confer:<id>``, they must NOT pass here,
         # or a chat account could reach admin endpoints.
         return bool(token) and self.db.session_sub(token) == "admin"
 

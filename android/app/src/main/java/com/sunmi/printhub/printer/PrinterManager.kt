@@ -47,7 +47,7 @@ class PrinterManager(private val appContext: Context) {
         if (service != null) return
         try {
             val ok = InnerPrinterManager.getInstance().bindService(appContext, innerCallback)
-            if (!ok) Log.e(TAG, "bindService returned false — Sunmi printer service unavailable?")
+            if (!ok) Log.e(TAG, "bindService returned false, Sunmi printer service unavailable?")
         } catch (t: Throwable) {
             Log.e(TAG, "bindService failed", t)
         }
@@ -119,7 +119,7 @@ class PrinterManager(private val appContext: Context) {
         return when {
             !completed -> {
                 // Dispatched through the correct AIDL; some firmwares print without confirming.
-                Log.w(TAG, "$op: no callback within ${PRINT_TIMEOUT_SEC}s — assuming printed")
+                Log.w(TAG, "$op: no callback within ${PRINT_TIMEOUT_SEC}s, assuming printed")
                 PrintResult.Success
             }
             cb.success -> {

@@ -1,11 +1,11 @@
 """
-Watchtower — FastAPI companion server + fleet error/log dashboard for Sunmi Print Hub.
+Watchtower, FastAPI companion server + fleet error/log dashboard for Sunmi Print Hub.
 
 Two roles in one process:
 
-  1. **Print relay** — the POS app keeps an outbound WebSocket here (``/messages``, HMAC-only);
+  1. **Print relay**, the POS app keeps an outbound WebSocket here (``/messages``, HMAC-only);
      the Print tab and LAN services render jobs and we push them to the device.
-  2. **Watchtower** — an observability platform. Small **Scout** clients sign log events to
+  2. **Watchtower**, an observability platform. Small **Scout** clients sign log events to
      ``/ingest``; anything at ``err`` severity or worse is auto-printed, and everything is
      browsable in the single-page dashboard served at ``/``.
 
@@ -41,7 +41,7 @@ from .logging_setup import setup as setup_logging
 from .relay import relay
 
 # ---------------------------------------------------------------------------
-# Config — env values are only *bootstrap defaults*; the source of truth is the DB config table,
+# Config, env values are only *bootstrap defaults*; the source of truth is the DB config table,
 # edited via the web Settings/Setup. This is what lets `git pull` + restart keep your settings.
 # ---------------------------------------------------------------------------
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(os.path.dirname(__file__)), "data"))
@@ -94,13 +94,13 @@ if not db.is_configured():
 
 _auto_print_times: deque[float] = deque()
 
-app = FastAPI(title="Watchtower — Sunmi Print Hub")
+app = FastAPI(title="Watchtower, Sunmi Print Hub")
 app.mount("/fonts", StaticFiles(directory=os.path.join(_HERE, "fonts")), name="fonts")
 _ASSETS_DIR = os.path.join(_WEB_DIST, "assets")
 if os.path.isdir(_ASSETS_DIR):
     app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
-else:  # dist not built/committed — the SPA won't load, but the API still runs
-    log.warning("Web bundle missing at %s — run `npm --prefix web run build`.", _WEB_DIST)
+else:  # dist not built/committed, the SPA won't load, but the API still runs
+    log.warning("Web bundle missing at %s, run `npm --prefix web run build`.", _WEB_DIST)
 
 _NO_CACHE = {"Cache-Control": "no-store, max-age=0"}
 
@@ -142,7 +142,7 @@ def _rate_ok(key: str, ip: str, max_n: int, window: float) -> bool:
 
 
 def _rp_origin(request: Request) -> tuple[str, str]:
-    """(rp_id, origin) for WebAuthn — from env override or the (proxy-aware) request host."""
+    """(rp_id, origin) for WebAuthn, from env override or the (proxy-aware) request host."""
     origin = os.environ.get("WEBAUTHN_ORIGIN") or _public_base_url(request)
     rp_id = os.environ.get("WEBAUTHN_RP_ID") or origin.split("://", 1)[-1].split("/")[0].split(":")[0]
     return rp_id, origin
@@ -214,7 +214,7 @@ def _session_ok(request: Request) -> bool:
 
 def _confer_user(request: Request):
     """Resolve a Confer bearer token to a user row, or None. Confer accounts are separate from
-    the master/admin session — a Confer token can't touch the dashboard, and vice versa."""
+    the master/admin session, a Confer token can't touch the dashboard, and vice versa."""
     uid = confer_sessions.resolve(auth.bearer(request.headers.get("authorization")))
     return db.confer_get_user(uid) if uid else None
 
@@ -225,7 +225,7 @@ def _authed_admin(request: Request, body: dict) -> bool:
 
 
 def _valid_temp_password(pw) -> bool:
-    """A non-revoked temp password with uses left (non-consuming) — for the public print page."""
+    """A non-revoked temp password with uses left (non-consuming), for the public print page."""
     pw = (pw or "").strip()
     if not pw:
         return False
@@ -273,7 +273,7 @@ async def watchtower_alias() -> FileResponse:
 
 @app.get("/public-print")
 async def public_print_page() -> FileResponse:
-    # Public page — anyone can open it, but printing only works with a valid temp password.
+    # Public page, anyone can open it, but printing only works with a valid temp password.
     return FileResponse(os.path.join(_WEB_DIST, "public-print.html"), headers=_NO_CACHE)
 
 
@@ -285,7 +285,7 @@ async def public_print_js() -> FileResponse:
 
 @app.get("/healthz")
 async def healthz() -> JSONResponse:
-    # Unauthenticated liveness only — no data. Used to detect the server after a restart.
+    # Unauthenticated liveness only, no data. Used to detect the server after a restart.
     return JSONResponse({"ok": True})
 
 
@@ -300,7 +300,7 @@ async def status(request: Request) -> JSONResponse:
             "device_connected": relay.is_connected(),
             "pending_jobs": sum(len(q) for q in relay.pending.values()),
             "print_width": print_width(),
-            # A printer that switched to chat isn't offline — surface it as "in Confer mode".
+            # A printer that switched to chat isn't offline, surface it as "in Confer mode".
             # Driven by the mode announcement on the print socket (works even when the Confer
             # server is a different machine). Presence lists who's on THIS server's Confer channel.
             "confer_mode": relay.any_confer(),
@@ -310,7 +310,7 @@ async def status(request: Request) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# Scout self-hosting — install the log-shipping client straight from this server, no git clone.
+# Scout self-hosting, install the log-shipping client straight from this server, no git clone.
 #   curl -fsSL https://<domain>/install-scout | bash
 # ---------------------------------------------------------------------------
 def _public_base_url(request: Request) -> str:
@@ -325,7 +325,7 @@ async def scout_source() -> FileResponse:
 
 
 _INSTALL_SCRIPT = r"""#!/usr/bin/env bash
-# Scout installer for Watchtower — downloads the client from your server and gets it ready
+# Scout installer for Watchtower, downloads the client from your server and gets it ready
 # for a device secret. No git clone, stdlib-only, re-runnable (never clobbers your secret).
 set -e
 BASE="__BASE__"
@@ -394,23 +394,23 @@ if [ "$have_tty" = "1" ]; then
   if [ -n "$(conf_get SCOUT_SECRET)" ]; then
     if ask_yn "Send a test log now? [Y/n]" Y; then
       "$BIN/scout" -s info --service setup "scout installed on $(hostname)" >/dev/null 2>&1 \
-        && echo "Test log sent — check the dashboard's Logs tab." || echo "Could not reach the server for the test."
+        && echo "Test log sent, check the dashboard's Logs tab." || echo "Could not reach the server for the test."
     fi
     if ask_yn "Run scout as an always-on background service so it stays online? [Y/n]" Y; then
       "$BIN/scout" install-service
       if ask_yn "Keep it running after you log out (enable linger)? [Y/n]" Y; then
         loginctl enable-linger "$USER" 2>/dev/null && echo "Linger enabled." \
-          || echo "Couldn't enable linger automatically — run: sudo loginctl enable-linger \"$USER\""
+          || echo "Couldn't enable linger automatically, run: sudo loginctl enable-linger \"$USER\""
       fi
     fi
     echo ""
-    echo "Done — your device should show 'agent online' in the dashboard shortly."
+    echo "Done, your device should show 'agent online' in the dashboard shortly."
   else
     echo ""
     echo "No secret set. When you have it:  $BIN/scout set-secret <SECRET>  then  $BIN/scout install-service"
   fi
 else
-  # No terminal (piped non-interactively) — print the manual steps.
+  # No terminal (piped non-interactively), print the manual steps.
   echo ""
   echo "Finish setup:"
   [ -z "$DEVICE_ID" ] && echo "  $BIN/scout set-device <DEVICE_ID>"
@@ -469,7 +469,7 @@ async def session_login(request: Request) -> JSONResponse:
     ip = _client_ip(request)
     if not _rate_ok("login", ip, max_n=10, window=300):
         log.warning("Login rate-limited from %s", ip)
-        return JSONResponse({"ok": False, "error": "Too many attempts — try again later"}, status_code=429)
+        return JSONResponse({"ok": False, "error": "Too many attempts, try again later"}, status_code=429)
     _, body = await _read(request)
     token = auth.login((body.get("username") or "").strip(), (body.get("password") or "").strip())
     if not token:
@@ -491,7 +491,7 @@ async def session_logout(request: Request) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# Confer — private printer chat (see confer.py)
+# Confer, private printer chat (see confer.py)
 # ---------------------------------------------------------------------------
 async def _confer_store_and_fanout(chat_id: int, sender: str, display: str,
                                    kind: str, text, image) -> "JSONResponse":
@@ -523,7 +523,7 @@ async def _confer_store_and_fanout(chat_id: int, sender: str, display: str,
 async def confer_login(request: Request) -> JSONResponse:
     ip = _client_ip(request)
     if not _rate_ok("confer_login", ip, max_n=10, window=300):
-        return JSONResponse({"error": "Too many attempts — try again later"}, status_code=429)
+        return JSONResponse({"error": "Too many attempts, try again later"}, status_code=429)
     _, body = await _read(request)
     res = confer_sessions.login((body.get("username") or "").strip(), (body.get("password") or "").strip())
     if not res:
@@ -720,7 +720,7 @@ async def webauthn_register_complete(request: Request) -> JSONResponse:
         log.warning("Passkey registration failed: %s", exc)
         return JSONResponse({"error": "Registration failed"}, status_code=400)
     if not ok:
-        return JSONResponse({"error": "Registration expired — try again"}, status_code=400)
+        return JSONResponse({"error": "Registration expired, try again"}, status_code=400)
     log.info("Passkey registered from %s", _client_ip(request))
     return JSONResponse({"ok": True})
 
@@ -771,7 +771,7 @@ async def webauthn_delete(request: Request) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# Config (view/update; session-gated) — the web Settings tab
+# Config (view/update; session-gated), the web Settings tab
 # ---------------------------------------------------------------------------
 @app.post("/config/get")
 async def config_get(request: Request) -> JSONResponse:
@@ -844,7 +844,7 @@ async def config_test_email(request: Request) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# Self-update — pull the latest main and restart, from the Settings tab.
+# Self-update, pull the latest main and restart, from the Settings tab.
 # Needs a process supervisor to come back up: run under systemd (Restart=always) or Docker
 # (restart: unless-stopped). Set UPDATE_RESTART_CMD to override the restart (e.g.
 # "sudo systemctl restart watchtower"); otherwise the process re-execs itself in place.
@@ -862,7 +862,7 @@ def _run_update() -> dict:
     root = _repo_root()
     if not root:
         return {"ok": False, "changed": False, "restarting": False,
-                "log": "Not a git checkout — self-update is unavailable here."}
+                "log": "Not a git checkout, self-update is unavailable here."}
     lines: list[str] = []
 
     def run(cmd, timeout=300):
@@ -916,7 +916,7 @@ def _restart_process() -> None:
             # Under uvicorn --reload the socket is owned by a separate reloader process, so
             # re-exec'ing would spawn a second reloader and fail to bind (Address already in
             # use). Exit instead and let the supervisor relaunch us. REQUIRES a supervisor that
-            # restarts on exit (systemd Restart=always) — ideally drop the dev-only --reload flag.
+            # restarts on exit (systemd Restart=always), ideally drop the dev-only --reload flag.
             log.warning("Restart under --reload: exiting for the supervisor to relaunch. "
                         "Remove --reload and set Restart=always for clean restarts.")
             os._exit(3)
@@ -928,7 +928,7 @@ def _restart_process() -> None:
 
 @app.post("/config/restart")
 async def config_restart(request: Request) -> JSONResponse:
-    """Restart the service without pulling — same restart path as self-update, no git/pip."""
+    """Restart the service without pulling, same restart path as self-update, no git/pip."""
     _, body = await _read(request)
     if not _authed_admin(request, body):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
@@ -983,7 +983,7 @@ async def preview(request: Request) -> Response:
     admin = _authed_admin(request, payload)
     if not (admin or _valid_temp_password(payload.get("password"))):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    # STATUS renders server internals — operator only, and it builds its own content.
+    # STATUS renders server internals, operator only, and it builds its own content.
     if payload.get("format") == "status":
         if not admin:
             return JSONResponse({"error": "STATUS is not available on public prints"}, status_code=403)
@@ -1026,7 +1026,7 @@ async def do_alert(request: Request) -> JSONResponse:
 
 
 async def _render_and_submit(payload: dict, on_delivered=None) -> bool:
-    """Render to exact pixels and push to the device (trusted HMAC channel — no per-job password)."""
+    """Render to exact pixels and push to the device (trusted HMAC channel, no per-job password)."""
     if payload.get("format") == "status":
         payload = _status_payload(str(payload.get("by") or payload.get("service") or ""))
     img = rendermod.render(payload, print_width())
@@ -1039,7 +1039,7 @@ async def _render_and_submit(payload: dict, on_delivered=None) -> bool:
 
 
 async def _mqtt_on_message(kind: str, payload: dict) -> None:
-    """A print/alert arrived on the Watchtower MQTT broker (already authenticated) — render it
+    """A print/alert arrived on the Watchtower MQTT broker (already authenticated), render it
     and relay to the printer, same as a manual/error print."""
     if kind == "alert":
         p = _log_to_alert_payload(
@@ -1080,7 +1080,7 @@ async def _print_payload(payload: dict, authed_device=None, authed_session=False
             return JSONResponse({"error": "Invalid password or no usages left"}, status_code=401)
         user, unlimited, temp_pw = row["user"], False, provided
 
-    # STATUS reveals host/scout internals — never allow it on a public (temp-password) print.
+    # STATUS reveals host/scout internals, never allow it on a public (temp-password) print.
     if payload.get("format") == "status":
         if temp_pw:
             return JSONResponse({"error": "STATUS is not available on public prints"}, status_code=403)
@@ -1128,12 +1128,12 @@ async def _print_payload(payload: dict, authed_device=None, authed_session=False
     return JSONResponse(
         {"ok": True, "delivered": False, "queued": True, "unlimited": unlimited,
          "remaining": None, "usage_message": _usage_message(unlimited, None),
-         "message": "No device connected — job queued (a temp use counts only when it prints)"}
+         "message": "No device connected, job queued (a temp use counts only when it prints)"}
     )
 
 
 # ---------------------------------------------------------------------------
-# Watchtower — log ingestion (HMAC only)
+# Watchtower, log ingestion (HMAC only)
 # ---------------------------------------------------------------------------
 def _auto_print_allowed() -> bool:
     fuse = auto_print_fuse()
@@ -1157,7 +1157,7 @@ def _log_to_alert_payload(device_id: str, severity: str, service: str, message: 
 
 
 # ---------------------------------------------------------------------------
-# STATUS — a printed system report (printer + host + watchdog + every scout).
+# STATUS, a printed system report (printer + host + watchdog + every scout).
 # The design carries the "terminal readout" feel; the content is all live data.
 # ---------------------------------------------------------------------------
 def _dur(secs: float) -> str:
@@ -1298,7 +1298,7 @@ def _build_status_report(by: str) -> str:
           _kv("silent", ", ".join(silent) if silent else "none"),
           _kv("check", "30s"), ""]
 
-    # Scouts — one clearly-boxed block each
+    # Scouts, one clearly-boxed block each
     counts = db.severity_counts()
     L.append(f"== SCOUTS ({len(active)}) ==")
     L.append("")
@@ -1358,7 +1358,7 @@ async def agent_poll(request: Request) -> JSONResponse:
         meta["host"] = str(body["host"])
     metrics = body.get("metrics") if isinstance(body.get("metrics"), dict) else None
     if metrics:
-        meta["metrics"] = metrics  # cpu/mem/disk/temp — shown on the device card
+        meta["metrics"] = metrics  # cpu/mem/disk/temp, shown on the device card
     if meta:
         db.touch_device(device_id, meta=meta)
     # Disk-full alert (print + email), deduped.
@@ -1415,7 +1415,7 @@ async def ingest(request: Request) -> JSONResponse:
         except Exception as exc:
             log.error("Auto-print failed for %s/%s: %s", device_id, service, exc)
     elif should_print:
-        log.warning("Auto-print fuse tripped (>%d/min) — %s/%s not printed", auto_print_fuse(), device_id, service)
+        log.warning("Auto-print fuse tripped (>%d/min), %s/%s not printed", auto_print_fuse(), device_id, service)
 
     log_id = db.add_log(device_id=device_id, severity=severity, message=message, service=service,
                         meta=meta, source_ip=_client_ip(request), printed=printed)
@@ -1425,7 +1425,7 @@ async def ingest(request: Request) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# Watchtower — dashboard data (session or master password)
+# Watchtower, dashboard data (session or master password)
 # ---------------------------------------------------------------------------
 @app.post("/watchtower/logs")
 async def watchtower_logs(request: Request) -> JSONResponse:
@@ -1552,7 +1552,7 @@ async def watchtower_devices_command(request: Request) -> JSONResponse:
 @app.post("/watchtower/devices/run")
 async def watchtower_devices_run(request: Request) -> JSONResponse:
     """Run a shell command on a scout agent; it ships stdout/stderr/exit back as a log
-    (service ``scout.run``, no auto-print). Powerful — operator (session) only."""
+    (service ``scout.run``, no auto-print). Powerful, operator (session) only."""
     _, body = await _read(request)
     if not _authed_admin(request, body):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
@@ -1671,7 +1671,7 @@ async def admin_revoke(request: Request) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
-# WebSocket — POS app (HMAC only)
+# WebSocket, POS app (HMAC only)
 # ---------------------------------------------------------------------------
 @app.websocket("/messages")
 async def messages(ws: WebSocket) -> None:
@@ -1683,12 +1683,12 @@ async def messages(ws: WebSocket) -> None:
     auth_id = res.device_id or "default"
     await ws.accept()
     # The HMAC id (auth_id) authenticates the connection; on the relay the printer is the single
-    # canonical print target "default" — that's what is_connected() and submit() look for.
+    # canonical print target "default", that's what is_connected() and submit() look for.
     client = await relay.register(ws, "default")
     log.info("Printer device connected: %s", auth_id)
 
     # This socket carries print jobs (and only the Confer *mode switch*). The chat itself rides a
-    # separate /confer/ws connection to whichever Confer server the printer is configured for — so
+    # separate /confer/ws connection to whichever Confer server the printer is configured for, so
     # the Confer server and this print/internet-listener server can be different machines. A "mode:
     # confer" announcement here just pauses print jobs and flips this server's badge to "in Confer".
     try:
@@ -1719,7 +1719,7 @@ async def messages(ws: WebSocket) -> None:
 
 
 # ---------------------------------------------------------------------------
-# WebSocket — Confer live channel. Accepts EITHER a dashboard session token (the web admin) OR a
+# WebSocket, Confer live channel. Accepts EITHER a dashboard session token (the web admin) OR a
 # Confer participant token (a printer chatting on this server). Both register with the hub and
 # receive live fan-out; participants also get offline catch-up and may send read receipts.
 # ---------------------------------------------------------------------------
@@ -1811,10 +1811,10 @@ async def _startup() -> None:
                         _silent_devices.add(d["id"])
                         ago = int(now - last) if last else -1
                         await _fire_alert(d["id"], "crit", "watchtower.silence",
-                                          f"device SILENT — no report for {ago}s (expected every {hb}s)")
+                                          f"device SILENT, no report for {ago}s (expected every {hb}s)")
                     elif not silent and was:
                         _silent_devices.discard(d["id"])
-                        await _fire_alert(d["id"], "notice", "watchtower.silence", "device recovered — reporting again")
+                        await _fire_alert(d["id"], "notice", "watchtower.silence", "device recovered, reporting again")
             except Exception as exc:
                 log.error("Watchdog failed: %s", exc)
 

@@ -1,7 +1,7 @@
 """
-WebAuthn passkeys — fingerprint / Touch ID / Windows Hello login.
+WebAuthn passkeys, fingerprint / Touch ID / Windows Hello login.
 
-Register a passkey (while signed in with the password) on each device you use — Mac (Touch ID),
+Register a passkey (while signed in with the password) on each device you use, Mac (Touch ID),
 laptop (Windows Hello), phone (Chrome fingerprint). Any registered passkey logs you in as the
 master user. User verification is required, so a biometric/PIN is always used.
 

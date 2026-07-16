@@ -50,7 +50,7 @@ class MainActivity : AppCompatActivity() {
         wv.addJavascriptInterface(Bridge(), "Android")
 
         // Session persistence: the native token is the source of truth. Before the web app's
-        // scripts run, seed localStorage from it — so login survives even if the WebView drops
+        // scripts run, seed localStorage from it, so login survives even if the WebView drops
         // its own localStorage between launches.
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             WebViewCompat.addDocumentStartJavaScript(

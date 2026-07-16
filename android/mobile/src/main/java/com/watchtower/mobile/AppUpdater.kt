@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * In-app updater. This repo hosts two apps, so we scan all releases and pick the latest whose
- * asset is named `WatchtowerMobile-*.apk` — never the Sunmi Print Hub release.
+ * asset is named `WatchtowerMobile-*.apk`, never the Sunmi Print Hub release.
  */
 object AppUpdater {
     private const val TAG = "AppUpdater"

@@ -16,10 +16,10 @@ function ErrorRateChart({ s }: { s: Series }) {
         {s.err.map((e, i) => {
           const total = e + s.other[i]
           return <div key={i} className={`bar ${e > 0 ? 'err' : ''}`} style={{ height: `${(total / max) * 100}%` }}
-            title={`${fmt(s.start + i * s.width)} — ${e} err, ${s.other[i]} other`} />
+            title={`${fmt(s.start + i * s.width)}, ${e} err, ${s.other[i]} other`} />
         })}
       </div>
-      <div className="chart-axis"><span>{fmt(s.start)}</span><span>24h — errors highlighted</span><span>now</span></div>
+      <div className="chart-axis"><span>{fmt(s.start)}</span><span>24h, errors highlighted</span><span>now</span></div>
     </>
   )
 }
@@ -35,8 +35,8 @@ function LogModal({ log, onClose }: { log: LogRow; onClose: () => void }) {
         <div className="mono" style={{ fontSize: 12, lineHeight: 1.7 }}>
           <div><span className="muted">time&nbsp;&nbsp;&nbsp;</span>{fmtTime(log.ts)}</div>
           <div><span className="muted">device&nbsp;</span>{log.device_id}</div>
-          <div><span className="muted">service</span> {log.service || '—'}</div>
-          <div><span className="muted">source&nbsp;</span>{log.source_ip || '—'} · printed={String(log.printed)}</div>
+          <div><span className="muted">service</span> {log.service || '-'}</div>
+          <div><span className="muted">source&nbsp;</span>{log.source_ip || '-'} · printed={String(log.printed)}</div>
         </div>
         <div style={{ marginTop: 12 }} className="muted">message</div>
         <pre>{log.message}</pre>
@@ -92,7 +92,7 @@ export function LogsTab({ onUnauthorized }: { onUnauthorized: () => void }) {
         <div className="cards">
           {data && data.devices.length
             ? data.devices.map((d) => <DeviceCard key={d.id} d={d} counts={data.counts} />)
-            : <div className="muted" style={{ fontSize: 12 }}>No devices yet — issue a secret in the Devices tab.</div>}
+            : <div className="muted" style={{ fontSize: 12 }}>No devices yet, issue a secret in the Devices tab.</div>}
         </div>
       </div>
 

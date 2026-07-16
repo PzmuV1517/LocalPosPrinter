@@ -12,7 +12,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Embedded LAN HTTP server. Cleartext HTTP is intentional — the target device is
+ * Embedded LAN HTTP server. Cleartext HTTP is intentional, the target device is
  * Android 7.1 (API 25) where cleartext is allowed by default; see README.
  *
  *  POST /print    JSON body, password via X-Access-Password header or "password" field.
@@ -23,7 +23,7 @@ class HttpServer(port: Int) : NanoHTTPD(port) {
 
     companion object {
         private const val TAG = "HttpServer"
-        private const val MAX_BODY_BYTES = 2 * 1024 * 1024 // 2 MB — keep base64 images sane.
+        private const val MAX_BODY_BYTES = 2 * 1024 * 1024 // 2 MB, keep base64 images sane.
     }
 
     override fun serve(session: IHTTPSession): Response {

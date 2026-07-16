@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
  * Confer REST client (bearer-token, separate from the HMAC device identity).
  *
  * Login mints a Confer session token on the server; every other call carries it as a bearer.
- * All methods are **synchronous** — call them from a background thread (ConferManager does).
+ * All methods are **synchronous**, call them from a background thread (ConferManager does).
  * On any non-2xx the server returns ``{"error": "..."}``; that message is surfaced verbatim.
  */
 class ConferApi(baseDomain: String) {

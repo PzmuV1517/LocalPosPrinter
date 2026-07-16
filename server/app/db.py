@@ -3,14 +3,14 @@ SQLite storage for the companion server / Watchtower.
 
 Everything that used to live in loose JSON files now lives in one indexed database:
 
-- ``devices``        — HMAC clients (Scouts, print services, the printer app). Their signing
+- ``devices``       , HMAC clients (Scouts, print services, the printer app). Their signing
                        secret is stored **encrypted** (see crypto.SecretBox), never in the clear.
-- ``logs``           — the observability stream every Scout reports into. Indexed by time,
+- ``logs``          , the observability stream every Scout reports into. Indexed by time,
                        severity and device so the dashboard can filter fast.
-- ``nonces``         — spent request nonces, for HMAC replay protection. Pruned on write.
-- ``temp_passwords`` — limited-use print passwords. Found via a keyed lookup hash and verified
+- ``nonces``        , spent request nonces, for HMAC replay protection. Pruned on write.
+- ``temp_passwords``, limited-use print passwords. Found via a keyed lookup hash and verified
                        with a slow scrypt hash; the plaintext is never stored.
-- ``history``        — print history for the admin/Watchtower views.
+- ``history``       , print history for the admin/Watchtower views.
 
 A one-time best-effort migration pulls in any pre-existing ``passwords.json`` / ``history.json``.
 """
@@ -860,7 +860,7 @@ class Database:
         return [self._confer_msg_row(r) for r in rows]
 
     def confer_messages_since(self, chat_id: int, after_id: int, limit: int = 500) -> List[dict]:
-        """Ascending messages in a chat with id > after_id — for offline catch-up."""
+        """Ascending messages in a chat with id > after_id, for offline catch-up."""
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM confer_messages WHERE chat_id=? AND id>? ORDER BY id ASC LIMIT ?",

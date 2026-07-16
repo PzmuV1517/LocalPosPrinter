@@ -389,7 +389,7 @@ object ReceiptRenderer {
 
     /** Format an epoch-seconds value (as string) to a readable time; pass through non-numeric. */
     private fun fmtTime(value: String?): String {
-        if (value.isNullOrBlank()) return "—"
+        if (value.isNullOrBlank()) return "-"
         val epoch = value.toDoubleOrNull() ?: return value
         return java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
             .format(java.util.Date((epoch * 1000).toLong()))
@@ -429,7 +429,7 @@ object ReceiptRenderer {
         return monoBlock(lines, w, paint)
     }
 
-    /** Draws pre-formatted monospace lines verbatim — no wrapping, no space collapsing. */
+    /** Draws pre-formatted monospace lines verbatim, no wrapping, no space collapsing. */
     private fun monoBlock(lines: List<String>, w: Int, paint: TextPaint): Bitmap {
         val lh = paint.descent() - paint.ascent()
         val h = (lh * lines.size + 2 * PAD).toInt().coerceAtLeast(1)

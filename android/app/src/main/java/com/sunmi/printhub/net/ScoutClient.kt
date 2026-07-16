@@ -9,7 +9,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * Scout — reports this device's own events up to the server's /ingest (Watchtower), HMAC-signed.
+ * Scout, reports this device's own events up to the server's /ingest (Watchtower), HMAC-signed.
  * Makes the printer one of the monitored devices in its own dashboard. Best-effort and fully
  * fire-and-forget: a reporting failure must never affect printing.
  *

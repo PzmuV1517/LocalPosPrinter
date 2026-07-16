@@ -18,7 +18,7 @@ function SecretPanel({ id, secret }: { id: string; secret: string }) {
   }
   return (
     <div className="secretbox">
-      <div><b>{id}</b> secret — copy now, shown once <CopyButton text={secret} /></div>
+      <div><b>{id}</b> secret, copy now, shown once <CopyButton text={secret} /></div>
       <div style={{ marginTop: 4 }} className="mono">{secret}</div>
       <div style={{ marginTop: 12 }}>
         <button className="ghost mini" onClick={showQr}>Show pairing QR</button>
@@ -87,7 +87,7 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
     if (d) alert(`Ping sent to ${id}. Watch Logs for a "pong" from scout.agent (needs the agent running).`)
   }
   async function restartAgent(id: string) {
-    if (!confirm(`Restart the scout agent on ${id}? (Re-execs it — picks up a new local scout.py.)`)) return
+    if (!confirm(`Restart the scout agent on ${id}? (Re-execs it, picks up a new local scout.py.)`)) return
     const d = await guard(api.restartScout(id))
     if (d) alert(`Restart queued for ${id}. Applies on its next poll.`)
   }
@@ -126,9 +126,9 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
       </div>
 
       <div className="card">
-        <h2>Install a Scout — command generator</h2>
+        <h2>Install a Scout, command generator</h2>
         <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>
-          Enter a device id (or leave blank), then run this on the device — it downloads the client from this server (no git clone) and gets it ready for a secret.
+          Enter a device id (or leave blank), then run this on the device, it downloads the client from this server (no git clone) and gets it ready for a secret.
         </p>
         <div className="row" style={{ alignItems: 'flex-end' }}>
           <div><label>Device id</label><input value={genId} placeholder="kitchen-pi" onChange={(e) => setGenId(e.target.value)} /></div>

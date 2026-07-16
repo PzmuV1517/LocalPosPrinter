@@ -1,5 +1,5 @@
 """
-Email notifications (SMTP, stdlib) — reach the operator when they're not at the printer.
+Email notifications (SMTP, stdlib), reach the operator when they're not at the printer.
 
 Config lives in the DB (edited in Settings → Notifications); the SMTP password is stored
 encrypted (SecretBox). Sending is synchronous smtplib, so callers run it via asyncio.to_thread.

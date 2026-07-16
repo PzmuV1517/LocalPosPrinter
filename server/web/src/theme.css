@@ -1,4 +1,4 @@
-/* Sitewide UI font — Fira Code, self-hosted from /fonts (served by FastAPI). */
+/* Sitewide UI font, Fira Code, self-hosted from /fonts (served by FastAPI). */
 @font-face { font-family:'Fira Code'; font-weight:400; src:url('/fonts/FiraCode-Regular.ttf'); }
 @font-face { font-family:'Fira Code'; font-weight:700; src:url('/fonts/FiraCode-Bold.ttf'); }
 /* Print-preview fonts. */

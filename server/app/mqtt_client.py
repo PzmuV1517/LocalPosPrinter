@@ -1,7 +1,7 @@
 """
 Watchtower as an MQTT **client** (as opposed to :mod:`mqtt_bridge`, which runs a broker here).
 
-This connects OUT to an existing broker you already run — e.g. Home Assistant's Mosquitto — and:
+This connects OUT to an existing broker you already run, e.g. Home Assistant's Mosquitto, and:
 
   * publishes **Home Assistant discovery** so a "Watchtower Printer" device appears automatically
     (a ``notify`` entity whose command relays to the printer),
@@ -9,7 +9,7 @@ This connects OUT to an existing broker you already run — e.g. Home Assistant'
     existing WebSocket (same ``on_message`` path as the built-in broker),
   * publishes a retained ``<prefix>status`` availability topic (with an ``offline`` LWT).
 
-Runs *alongside* the built-in broker — pick either or both in Settings. The broker password we
+Runs *alongside* the built-in broker, pick either or both in Settings. The broker password we
 need to authenticate to your broker is stored **encrypted** (SecretBox), since we must send it.
 Every failure is caught and retried so a broker being down never affects the main server.
 """
@@ -33,14 +33,14 @@ def notify_discovery(prefix: str) -> tuple[str, str, str]:
     """Return (config_topic, payload_json, status_topic) for the Home Assistant notify device.
 
     Shared by both MQTT modes (hosted broker and outbound client) so they publish the identical
-    device — HA dedupes on the unique_id, so running both never makes two printers.
+    device, HA dedupes on the unique_id, so running both never makes two printers.
     """
     print_topic, status_topic = f"{prefix}print", f"{prefix}status"
     device = {
         "identifiers": [NODE_ID], "name": "Watchtower Printer",
         "manufacturer": "Watchtower", "model": "MQTT bridge",
     }
-    # HA's notify title/message map onto our title/text. No password needed — the broker
+    # HA's notify title/message map onto our title/text. No password needed, the broker
     # connection is already authenticated and Watchtower relays as a trusted source.
     command_template = (
         "{\"format\":\"{{ data.format | default('plain') }}\","

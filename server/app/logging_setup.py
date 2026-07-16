@@ -2,7 +2,7 @@
 Server-side audit/operational logging.
 
 This is the server's *own* log (who authenticated, what was ingested/printed, admin actions)
-— separate from the Watchtower log stream that devices report into. Goes to stdout (so it's
+- separate from the Watchtower log stream that devices report into. Goes to stdout (so it's
 captured by systemd/journald or Docker) and to a size-rotating file under ``DATA_DIR``.
 """
 

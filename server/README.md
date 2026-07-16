@@ -1,15 +1,15 @@
-# Sunmi Print Hub — companion server + Watchtower
+# Sunmi Print Hub, companion server + Watchtower
 
 FastAPI server that:
 
-1. **Print relay** — accepts the POS app's outbound WebSocket and pushes jobs to it, and hosts
+1. **Print relay**, accepts the POS app's outbound WebSocket and pushes jobs to it, and hosts
    a web UI for composing prints with a **pixel-accurate live preview**.
-2. **Watchtower** — a fleet **error/log dashboard**. Small **Scout** clients on your other
+2. **Watchtower**, a fleet **error/log dashboard**. Small **Scout** clients on your other
    devices sign log events to `/ingest`; anything at `err` severity or worse is **auto-printed**,
    and everything is browsable in the login-gated `/watchtower` dashboard.
 
 Runs on your own infrastructure, behind a TLS-terminating reverse proxy (you're exposed at
-`watchtower.andreibanu.com`, so TLS is mandatory — see [Security](#security-model)).
+`watchtower.andreibanu.com`, so TLS is mandatory, see [Security](#security-model)).
 
 ## Run
 
@@ -18,7 +18,7 @@ cd server
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Config is done in the BROWSER on first run — the env vars below are only bootstrap defaults
+# Config is done in the BROWSER on first run, the env vars below are only bootstrap defaults
 # for headless deploys. All of them are editable later in the Settings tab and persist in the
 # database, so a `git pull` + restart never re-prompts or resets you.
 export SERVER_SECRET_KEY=          # (optional) at-rest encryption key; auto-generated if unset
@@ -33,13 +33,13 @@ export HMAC_SKEW_SECS=300          # allowed client/server clock skew
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
-Then open `https://<your-domain>/` — on first run you'll get a **setup wizard** (master password
+Then open `https://<your-domain>/`, on first run you'll get a **setup wizard** (master password
 + defaults); after that it's the login-gated **Watchtower** dashboard.
 
 ## Security model
 
 - **Machine clients** (Scouts, print services, the printer app) authenticate with **HMAC-signed
-  requests** — never a shared password in a URL. Each carries `X-Device-Id`, `X-Timestamp`,
+  requests**, never a shared password in a URL. Each carries `X-Device-Id`, `X-Timestamp`,
   `X-Nonce` and `X-Signature`, where the signature is
   `HMAC-SHA256(device_secret, "device_id\ntimestamp\nnonce\nMETHOD\npath\nsha256_hex(body)")`.
   The server rejects requests with a stale timestamp (±`HMAC_SKEW_SECS`) or a replayed nonce.
@@ -54,44 +54,44 @@ Then open `https://<your-domain>/` — on first run you'll get a **setup wizard*
   plaintext `ws://` to a public host once a device secret is configured.
 - Everything security-relevant is written to the server's audit log (`data/server.log` + stdout):
   logins, auth failures, ingests, prints, device issuance/revocation.
-- **No data without auth.** Every endpoint that returns state is authenticated — including
+- **No data without auth.** Every endpoint that returns state is authenticated, including
   `/status`, `/preview` and `/check` (operator session/master only). The one open endpoint is
   `/healthz` (a bare liveness `{"ok":true}`, no data), plus the public client files `/scout.py`
   and `/install-scout` (no secrets). Login endpoints are **rate-limited** per IP.
-- **Hardened responses** — a strict **Content-Security-Policy** (everything self-hosted, no
+- **Hardened responses**, a strict **Content-Security-Policy** (everything self-hosted, no
   external scripts/connects), `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`,
   a locked-down `Permissions-Policy`, and HSTS when behind TLS.
 
 ### Passkeys (fingerprint / Touch ID / Windows Hello)
 
 Sign in with your fingerprint instead of the password. In **Settings → Passkeys**, *Add a
-passkey* on each device you use — Mac (Touch ID), laptop (Windows Hello), phone (Chrome
+passkey* on each device you use, Mac (Touch ID), laptop (Windows Hello), phone (Chrome
 fingerprint). Then the login screen shows **Use fingerprint / passkey**. Any registered passkey
 logs you in as the master user; user-verification is required, so a biometric/PIN is always used.
 
-Passkeys are WebAuthn, bound to the domain — they need **HTTPS** (`watchtower.andreibanu.com`).
+Passkeys are WebAuthn, bound to the domain, they need **HTTPS** (`watchtower.andreibanu.com`).
 The RP id/origin come from the request host (override with `WEBAUTHN_RP_ID` / `WEBAUTHN_ORIGIN`
 if your proxy headers differ). Credentials are stored as public keys only.
 
-## Watchtower — the dashboard (served at `/`)
+## Watchtower, the dashboard (served at `/`)
 
 A single dark-themed page. On first run it shows the **setup wizard**; once configured it shows a
 **login gate**, then the dashboard renders nothing until your session token verifies (the token is
 kept in `localStorage`; the master password is never stored there). Tabs:
 
-- **Logs** — device cards (online/offline, last-seen, 24h severity breakdown) + a filterable,
+- **Logs**, device cards (online/offline, last-seen, 24h severity breakdown) + a filterable,
   auto-refreshing log stream. Each row has a **Print** button for manual, on-demand printing.
-- **Print** — the compose UI with the pixel-accurate live preview (formats, fonts, MUIE alerts,
+- **Print**, the compose UI with the pixel-accurate live preview (formats, fonts, MUIE alerts,
   barcodes/QR, images). You're already authenticated, so it prints straight from your session.
-- **Devices** — *Issue device secret* (shown once), **Rotate**, **Revoke**.
-- **Passwords** — create/revoke limited-use print passwords.
-- **History** — the print history.
-- **Settings** — edit all config (print width, auto-print severity + fuse, retention) and change
+- **Devices**, *Issue device secret* (shown once), **Rotate**, **Revoke**.
+- **Passwords**, create/revoke limited-use print passwords.
+- **History**, the print history.
+- **Settings**, edit all config (print width, auto-print severity + fuse, retention) and change
   the master password.
 
-### Scout — the log-shipping client
+### Scout, the log-shipping client
 
-**Easiest install (no git clone)** — the server hosts the client and a **guided** one-line
+**Easiest install (no git clone)**, the server hosts the client and a **guided** one-line
 installer. In the **Devices** tab, *Issue device secret*, then on the device run the command shown
 there and answer the prompts (paste the secret, then y/n):
 
@@ -102,11 +102,11 @@ curl -fsSL "https://watchtower.andreibanu.com/install-scout?device_id=kitchen-pi
 It downloads `scout.py` to `~/.local/share/scout`, drops a `scout` launcher in `~/.local/bin`,
 writes `~/.config/scout/scout.env` (server URL + device id pre-filled), then interactively:
 prompts for the **device secret** (hidden), offers a **test log**, and offers to run the
-**agent as a systemd service** and **enable linger** — so you end up online with nothing left to
+**agent as a systemd service** and **enable linger**, so you end up online with nothing left to
 do. It reads the real terminal even under `curl | bash`; if there's no TTY it prints the manual
 steps instead. Re-runnable and never overwrites a secret you've set.
 
-**Or use `scout.py` directly** (stdlib-only) — issue a secret in the dashboard, then:
+**Or use `scout.py` directly** (stdlib-only), issue a secret in the dashboard, then:
 
 ```bash
 export WATCHTOWER_URL=https://watchtower.andreibanu.com
@@ -140,8 +140,8 @@ loginctl enable-linger "$USER"   # (optional) keep it running after you log out
 ```
 
 The agent **long-polls** `/agent/poll` (HMAC-signed). That poll is its heartbeat, so the device
-shows **online** without sending a log and — because the poll drops and immediately re-polls on a
-server restart — it's marked alive again within seconds. The dashboard's device card shows *agent
+shows **online** without sending a log and, because the poll drops and immediately re-polls on a
+server restart, it's marked alive again within seconds. The dashboard's device card shows *agent
 online* and the running **scout version**.
 
 From the **Devices** tab, **Update** (per device) or **Update all scouts** queues an update; each
@@ -149,9 +149,9 @@ agent picks it up on its next poll (near-instant while connected), pulls the lat
 this server, and restarts itself. Since the server serves `scout.py` from its own checkout, run the
 server self-update first so scouts pull the newest `main`.
 
-Agents also report **host health** (disk/mem/load/temp — shown on the device card), obey **Ping**
+Agents also report **host health** (disk/mem/load/temp, shown on the device card), obey **Ping**
 (visible pong), **Restart**, and **Run** (run a shell command; output comes back as a `scout.run`
-log). The dashboard's device card lets you set a **heartbeat interval** — the dead-man's-switch.
+log). The dashboard's device card lets you set a **heartbeat interval**, the dead-man's-switch.
 
 ### Forwarding logs from all services (journald / files)
 
@@ -169,23 +169,23 @@ need the user in the `systemd-journal` group.)
 
 ## Alerts, notifications & observability (dashboard)
 
-- **Dead-man's-switch** — give a device a heartbeat interval (Devices tab). If it stops reporting
+- **Dead-man's-switch**, give a device a heartbeat interval (Devices tab). If it stops reporting
   for longer, Watchtower prints + emails a `crit` "device SILENT" alert, and a "recovered" note
   when it returns.
-- **Disk-full alert** — Settings → *Disk-full alert at %*; scouts reporting disk over that threshold
+- **Disk-full alert**, Settings → *Disk-full alert at %*; scouts reporting disk over that threshold
   trigger a print + email (deduped).
-- **Email** — Settings → *Notifications*: point it at your SMTP (e.g. `watchdog@andreibanu.com` →
+- **Email**, Settings → *Notifications*: point it at your SMTP (e.g. `watchdog@andreibanu.com` →
   `contact@andreibanu.com`); logs at the chosen severity or worse (plus silence/disk alerts) are
   emailed. **Send test email** verifies it. Password stored encrypted.
 - **Error-rate chart** (24h) and clickable **log detail** (full meta) in the Logs tab; **Export CSV**
   of the current filter; **per-severity retention** (keep errors longer than info).
-- **The printer self-reports** to Watchtower — connection, every print (success/fail), and rejects
+- **The printer self-reports** to Watchtower, connection, every print (success/fail), and rejects
   show up as logs (service `printer.*`), marked no-print so they don't spew paper.
 
 ## MQTT broker (hosted by Watchtower)
 
 Settings → **MQTT broker** turns on an MQTT broker **inside Watchtower** (amqtt) so external
-systems publish print jobs to reliable server infrastructure — the phone just receives them over
+systems publish print jobs to reliable server infrastructure, the phone just receives them over
 its existing link, exactly like manual/error prints. Publish JSON to:
 
 ```
@@ -196,7 +196,7 @@ its existing link, exactly like manual/error prints. Publish JSON to:
 Set a **username/password** (stored hashed) so external clients must authenticate; with no
 username it accepts anonymous connections (LAN/behind-firewall only). Expose the port
 (default 1883) through your firewall/reverse proxy for outside publishers. The broker runs guarded
-— if it can't start, the rest of the server is unaffected. From Home Assistant, point an
+- if it can't start, the rest of the server is unaffected. From Home Assistant, point an
 `mqtt.publish` at `watchtower/print`; it prints via the phone.
 
 ## Pairing the printer app
@@ -205,7 +205,7 @@ username it accepts anonymous connections (LAN/behind-firewall only). Expose the
 2. In the app: **Settings → Watchtower pairing**, paste the device id + secret, enable the
    internet listener, set the server domain, Save.
 
-The app now connects to `wss://<domain>/messages` **HMAC-signed** — no password in the URL, and no
+The app now connects to `wss://<domain>/messages` **HMAC-signed**, no password in the URL, and no
 password-fallback path. (Any device on the old v1.0.x password link must be re-paired this way.)
 
 ## First-run setup & changing config
@@ -216,7 +216,7 @@ and the defaults; everything is stored in the DB under `DATA_DIR` and is editabl
 `ACCESS_PASSWORD` in the environment to seed the master password and skip the wizard:
 
 ```ini
-# systemd — /etc/systemd/system/watchtower.service
+# systemd, /etc/systemd/system/watchtower.service
 [Service]
 Environment=ACCESS_PASSWORD=choose-a-strong-secret
 ExecStart=/path/to/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
@@ -239,7 +239,7 @@ need **no Node on the server**. To change the UI:
 cd server/web
 npm install
 npm run dev      # local dev against a running uvicorn (proxies the API)
-npm run build    # rebuild dist/ — commit the result so the server picks it up
+npm run build    # rebuild dist/, commit the result so the server picks it up
 ```
 
 `node_modules/` is gitignored; `dist/` is committed on purpose.
@@ -247,19 +247,19 @@ npm run build    # rebuild dist/ — commit the result so the server picks it up
 ## Updating (self-update button)
 
 **Settings → Server updates → Pull latest & restart** runs `git pull --ff-only origin main`,
-`pip install -r requirements.txt` if anything changed, and then restarts the service — no manual
+`pip install -r requirements.txt` if anything changed, and then restarts the service, no manual
 `git pull`. The dashboard shows the git output and reloads once the server is back (your session
 survives the restart).
 
 For the restart to bring up the new code, the service must run under a supervisor that restarts
-it — systemd with `Restart=always` (above) or Docker `restart: unless-stopped`. By default the
+it, systemd with `Restart=always` (above) or Docker `restart: unless-stopped`. By default the
 process re-execs itself in place (works under any supervisor, and standalone in most setups); set
 `UPDATE_RESTART_CMD` to override, e.g. `Environment=UPDATE_RESTART_CMD=sudo systemctl restart watchtower`.
 
 ## Passwords & tabs
 
 - The **master password** logs you into the dashboard and prints without limit.
-- **Passwords** tab — create limited-use print passwords (a `user` label + a `max_uses` cap),
+- **Passwords** tab, create limited-use print passwords (a `user` label + a `max_uses` cap),
   see usage, and revoke. These are for handing to LAN services; a use is consumed only when the
   print actually reaches the device. The **Print** tab's `/check` reports remaining uses without
   consuming one.
@@ -268,7 +268,7 @@ process re-execs itself in place (works under any supervisor, and standalone in 
 
 A minimal page **anyone can open** (no login) that only prints with a **temporary password** you
 issued in the Passwords tab. Enter the password, compose (plain/centered/boxed/header/banner/alert),
-preview, and print — each print consumes one use. Hand out a `max_uses`-capped password instead of
+preview, and print, each print consumes one use. Hand out a `max_uses`-capped password instead of
 dashboard access. Preview works with the temp password (non-consuming); everything else stays gated.
 
 ### Image printing
@@ -310,25 +310,25 @@ Caddy proxies WebSockets transparently; the Python process speaks plain HTTP/WS 
 
 | Method | Path | Auth | Purpose |
 |--------|------|------|---------|
-| GET | `/`, `/watchtower` | — | Watchtower SPA (setup wizard → login → tabs) |
-| GET | `/setup/status` | — | Is the server configured yet? |
-| POST | `/setup` | — (first run only) | Complete first-run setup; returns a session token |
+| GET | `/`, `/watchtower` |, | Watchtower SPA (setup wizard → login → tabs) |
+| GET | `/setup/status` |, | Is the server configured yet? |
+| POST | `/setup` |, (first run only) | Complete first-run setup; returns a session token |
 | POST | `/session/login` | master pw | Exchange the master password for a session token |
 | POST | `/session/verify` | session | Is this session token still valid? |
 | POST | `/config/get`, `/config/set` | session/master | Read / update config (Settings tab) |
-| POST | `/preview` | — | Render a payload → PNG |
+| POST | `/preview` |, | Render a payload → PNG |
 | POST | `/print` | session **or** master/temp pw **or** HMAC | Render → push to device |
 | POST | `/alert` | session **or** master/temp pw **or** HMAC | MUIE alert intake |
-| POST | `/check` | — | Non-consuming password check |
+| POST | `/check` |, | Non-consuming password check |
 | POST | `/ingest` | **HMAC** | Scout log intake; auto-prints `err`+ |
 | POST | `/watchtower/logs` | session/master | Filtered logs + device cards + counts |
 | POST | `/watchtower/print` | session/master | Manually print a stored log by id |
 | POST | `/watchtower/devices/create` \| `/rotate` \| `/revoke` | session/master | Manage device secrets |
 | POST | `/admin/state` \| `/admin/create` \| `/admin/revoke` | session/master | Temp passwords + history |
-| GET | `/status` | — | Device connected? pending jobs? |
+| GET | `/status` |, | Device connected? pending jobs? |
 | WS | `/messages` | **HMAC only** | POS app connects here for jobs |
 
-## MUIE — Minimal Unified Incident Envelope (alert system)
+## MUIE, Minimal Unified Incident Envelope (alert system)
 
 A tiny standard your local services use to print a uniform alert. The envelope (fixed
 header + footer) sandwiches your message:
@@ -347,7 +347,7 @@ header + footer) sandwiches your message:
 ```
 
 `alert_type` is a syslog/journald severity: **emerg, alert, crit, err, warning, notice,
-info, debug**. The footer prints two clocks — the time the sender reported (`sent_at`,
+info, debug**. The footer prints two clocks, the time the sender reported (`sent_at`,
 epoch seconds) and the time the receiving app stamped it (`recv`).
 
 Two ways to fire one, both take the same fields:
@@ -362,7 +362,7 @@ curl -sX POST https://pos.example.com/alert \
        "sent_at":'"$(date +%s)"'}'
 ```
 
-**Directly to the device on the LAN (plain HTTP — the device is Android 7.1):**
+**Directly to the device on the LAN (plain HTTP, the device is Android 7.1):**
 
 ```bash
 curl -sX POST http://192.168.1.50:8080/print \
@@ -378,5 +378,5 @@ Both render the identical envelope. The server path also honours limited-use pas
 
 `/preview` and `/print` call the **same** `render()` in `app/render.py`. Print ships that
 render's exact pixels as `image_raw_bitmap`, so what the preview shows is what prints.
-(The app's own on-device Canvas renderer — used for local manual prints and raw
-HTTP/MQTT jobs — is kept aligned but isn't part of this pixel-exact guarantee.)
+(The app's own on-device Canvas renderer, used for local manual prints and raw
+HTTP/MQTT jobs, is kept aligned but isn't part of this pixel-exact guarantee.)

@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * In-app updater: checks GitHub Releases for a newer version, downloads the APK, and hands it
- * to the system installer — so the end user never has to open a browser or fetch files.
+ * to the system installer, so the end user never has to open a browser or fetch files.
  */
 object AppUpdater {
 

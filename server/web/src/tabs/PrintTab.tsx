@@ -16,7 +16,7 @@ const FIELD_VIS: Record<Fmt, Vis> = {
   qrcode: { title: true, text: true },
   image: { image: true },
   alert: { text: true, alert_type: true, service: true },
-  status: {},  // server-generated report — no input fields
+  status: {},  // server-generated report, no input fields
 }
 const FONT_FAMILY: Record<string, string> = { '1': 'monospace', '2': 'Jersey10', '3': 'Jacquard12', '4': 'Doto' }
 const FMTS: Fmt[] = ['plain', 'centered', 'boxed', 'header_body', 'banner', 'list', 'barcode', 'qrcode', 'image', 'alert', 'status']
@@ -96,7 +96,7 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
   function onImage(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) { setImageB64(null); return }
-    // Downscale in the browser to the print width before sending — keeps the payload tiny
+    // Downscale in the browser to the print width before sending, keeps the payload tiny
     // (avoids reverse-proxy body limits) and normalizes to PNG (the server re-dithers anyway).
     const r = new FileReader()
     r.onload = () => {
@@ -113,7 +113,7 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
         ctx.drawImage(img, 0, 0, cw, ch)
         setImageB64(canvas.toDataURL('image/png'))
       }
-      img.onerror = () => setResult({ ok: false, text: 'Could not read that image — try a PNG or JPEG (HEIC isn’t supported by the browser).' })
+      img.onerror = () => setResult({ ok: false, text: 'Could not read that image, try a PNG or JPEG (HEIC isn’t supported by the browser).' })
       img.src = r.result as string
     }
     r.readAsDataURL(f)
@@ -128,7 +128,7 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
           <select value={format} onChange={(e) => setFormat(e.target.value as Fmt)}>{FMTS.map((f) => <option key={f} value={f}>{f}</option>)}</select>
 
           {format === 'status' && <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            Live system report — printer, host, watchdog and every scout. No fields needed; the preview shows current state.
+            Live system report, printer, host, watchdog and every scout. No fields needed; the preview shows current state.
           </p>}
 
           {vis.alert_type && <><label>Alert type (severity)</label>
@@ -140,10 +140,10 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
 
           <label>Font (all formats)</label>
           <select value={font} onChange={(e) => setFont(e.target.value)}>
-            <option value="1">1 — Mono (default)</option><option value="2">2 — Jersey 10</option>
-            <option value="3">3 — Jacquard 12</option><option value="4">4 — Doto</option>
+            <option value="1">1, Mono (default)</option><option value="2">2, Jersey 10</option>
+            <option value="3">3, Jacquard 12</option><option value="4">4, Doto</option>
           </select>
-          <div className="muted" style={{ fontSize: 20, marginTop: 6, fontFamily: FONT_FAMILY[font] }}>Sample — ALERT 0123</div>
+          <div className="muted" style={{ fontSize: 20, marginTop: 6, fontFamily: FONT_FAMILY[font] }}>Sample, ALERT 0123</div>
 
           {vis.title && <><label>Title</label><input value={title} placeholder="Title" onChange={(e) => setTitle(e.target.value)} /></>}
           {vis.text && <><label>Text</label>
@@ -210,7 +210,7 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
         </div>
       </div>
       <div className="col">
-        <label style={{ marginTop: 0 }}>Live preview — pixel-for-pixel what prints</label>
+        <label style={{ marginTop: 0 }}>Live preview, pixel-for-pixel what prints</label>
         <div className="preview-box">{preview && <img src={preview} alt="preview" />}</div>
       </div>
     </div>

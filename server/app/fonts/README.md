@@ -7,7 +7,7 @@ Expected filenames (rename the download to match):
 
 | # | Font | File | Download |
 |---|------|------|----------|
-| 1 | *(built-in mono — default, no file needed)* | — | ships with the app |
+| 1 | *(built-in mono, default, no file needed)* |, | ships with the app |
 | 2 | Jersey 10 | `Jersey10-Regular.ttf` | https://fonts.google.com/specimen/Jersey+10 |
 | 3 | Jacquard 12 | `Jacquard12-Regular.ttf` | https://fonts.google.com/specimen/Jacquard+12 |
 | 4 | Doto | `Doto-Regular.ttf` | https://fonts.google.com/specimen/Doto |
@@ -17,7 +17,7 @@ or set `FONT_PATH`-style paths in `_ALERT_FONT_FILES` if you keep the variable f
 
 All three are open-source (SIL Open Font License), so bundling the TTFs is fine.
 
-The base (non-mono) `DejaVuSansMono.ttf` for font 2 can also live here — see the parent
+The base (non-mono) `DejaVuSansMono.ttf` for font 2 can also live here, see the parent
 README's Fonts section.
 
 ## Android

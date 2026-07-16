@@ -60,7 +60,7 @@ class SettingsActivity : AppCompatActivity() {
         binding.batteryButton.text = if (exempt)
             "Battery optimization: EXEMPT (tap to review)"
         else
-            "Ignore battery optimizations — NOT exempt, tap to fix"
+            "Ignore battery optimizations, NOT exempt, tap to fix"
     }
 
     private fun startScan() {
@@ -89,7 +89,7 @@ class SettingsActivity : AppCompatActivity() {
             }
             binding.deviceIdInput.setText(deviceId)
             binding.deviceSecretInput.setText(secret)
-            toast("Paired '$deviceId' — review and Save")
+            toast("Paired '$deviceId', review and Save")
         } catch (t: Throwable) {
             toast("Couldn't read pairing QR")
         }
@@ -157,7 +157,7 @@ class SettingsActivity : AppCompatActivity() {
         s.autoStart = binding.autoStart.isChecked
 
         PrintHubService.restart(this)
-        toast("Saved — services restarted")
+        toast("Saved, services restarted")
     }
 
     private fun updateInternetStatus() {

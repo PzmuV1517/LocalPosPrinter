@@ -23,7 +23,7 @@ import com.sunmi.printhub.ui.MainActivity
 /**
  * Foreground service that hosts the HTTP server + MQTT client + internet WebSocket
  * listener and keeps the printer bound. At API 25 there are no Doze / background-execution
- * limits, so a plain persistent foreground Service is enough — no JobScheduler workarounds.
+ * limits, so a plain persistent foreground Service is enough, no JobScheduler workarounds.
  */
 class PrintHubService : Service() {
 
@@ -122,14 +122,14 @@ class PrintHubService : Service() {
     /**
      * Fired by the alarm. Waking the CPU here lets any socket data that Doze deferred get
      * processed (that's what flushes the backlog), and we re-acquire locks / force a reconnect
-     * if the link actually dropped — all without needing the screen to come on.
+     * if the link actually dropped, all without needing the screen to come on.
      */
     private fun heartbeat() {
         if (wakeLock?.isHeld != true || wifiLock?.isHeld != true) {
             releaseLocks(); acquireLocks()
         }
         if (!Hub.internetConnected && Hub.settings.internetEnabled && Hub.settings.internetDomain.isNotBlank()) {
-            Log.i(TAG, "Heartbeat: internet link down — reconnecting")
+            Log.i(TAG, "Heartbeat: internet link down, reconnecting")
             stopInternet()
             internet = InternetListener(
                 Hub.settings.internetDomain, deviceId = Hub.settings.deviceId,
@@ -223,7 +223,7 @@ class PrintHubService : Service() {
             mqtt = MqttManager(this).also { it.start() }
         }
 
-        // Internet listener (HMAC — needs a device secret paired in the Watchtower dashboard).
+        // Internet listener (HMAC, needs a device secret paired in the Watchtower dashboard).
         stopInternet()
         if (s.internetEnabled && s.internetDomain.isNotBlank()) {
             internet = InternetListener(

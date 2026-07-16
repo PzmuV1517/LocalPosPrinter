@@ -12,7 +12,7 @@ import android.text.TextPaint
 /**
  * Renders Confer chat messages to the print head, in the layout the product spec calls for:
  *
- *  * **Your** messages are right-aligned (no name — they're yours).
+ *  * **Your** messages are right-aligned (no name, they're yours).
  *  * **Others'** messages are left-aligned: their name, then the message on a `>`-prefixed line.
  *  * **Images** are printed page-wide (full quality, not squeezed to one side); above the image
  *    comes the sender name, a newline, a `>`, a newline, then the image.
@@ -67,8 +67,8 @@ object ConferRenderer {
     }
 
     /**
-     * A text message. Your own sits on the right — your name, then the message closed with a `<`.
-     * Others sit on the left — their name, then the message opened with a `>`. The arrows point
+     * A text message. Your own sits on the right, your name, then the message closed with a `<`.
+     * Others sit on the left, their name, then the message opened with a `>`. The arrows point
      * inward toward each speaker's side. [showName] is false for a run of messages from the same
      * sender, so consecutive messages group tightly without repeating the name.
      */

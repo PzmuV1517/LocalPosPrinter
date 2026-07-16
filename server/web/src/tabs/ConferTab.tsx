@@ -3,7 +3,7 @@ import * as api from '../api'
 import { Unauthorized } from '../api'
 
 /**
- * Admin view of Confer — a WhatsApp-style console. The folder/chat tree and participant roster
+ * Admin view of Confer, a WhatsApp-style console. The folder/chat tree and participant roster
  * live on the left; the selected conversation and composer on the right. The owner posts as
  * "admin" (right-aligned), and a live WebSocket streams new messages in as they arrive.
  */

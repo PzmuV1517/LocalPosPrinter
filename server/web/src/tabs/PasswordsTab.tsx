@@ -48,7 +48,7 @@ export function PasswordsTab({ onUnauthorized }: { onUnauthorized: () => void })
                 ? <tr><td colSpan={4} className="muted">None.</td></tr>
                 : rows.map((p, i) => (
                   <tr key={i}>
-                    <td>{p.user || '—'}</td><td>{p.used} / {p.max_uses}</td><td>{p.remaining}</td>
+                    <td>{p.user || '-'}</td><td>{p.used} / {p.max_uses}</td><td>{p.remaining}</td>
                     <td><span className={`pill ${p.active ? 'ok' : 'bad'}`}>{p.active ? 'active' : (p.revoked ? 'revoked' : 'used up')}</span></td>
                   </tr>
                 ))}

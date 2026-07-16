@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Scout — the tiny log-shipper you drop on any device to report into Watchtower.
+Scout, the tiny log-shipper you drop on any device to report into Watchtower.
 
 It signs every request with your device's HMAC secret (timestamp + nonce + body hash), so
 nothing reusable is exposed even over a logged proxy. Errors (severity `err` and worse) are
 auto-printed by the server; everything is browsable in the /watchtower dashboard.
 
-No third-party dependencies — standard library only.
+No third-party dependencies, standard library only.
 
 Set up a device in the Watchtower dashboard ("Issue device secret"), then:
 
@@ -87,7 +87,7 @@ def _collect_metrics() -> dict:
 
 
 def _describe_error(e: Exception) -> str:
-    """A short, human reason why a poll failed — reported on reconnect."""
+    """A short, human reason why a poll failed, reported on reconnect."""
     import http.client
     import socket as _socket
     import urllib.error
@@ -214,7 +214,7 @@ def _forward_journald(scout: "Scout", floor: str, no_print: bool) -> None:
         p = subprocess.Popen(["journalctl", "-f", "-n", "0", "-o", "json", "--no-pager"],
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     except FileNotFoundError:
-        print("journalctl not found — journald forwarding disabled", file=sys.stderr)
+        print("journalctl not found, journald forwarding disabled", file=sys.stderr)
         return
     for line in p.stdout:
         try:
@@ -292,7 +292,7 @@ def run_agent(scout: "Scout") -> int:
     while True:
         try:
             cmd = scout.poll(host)
-            if not connected:  # we just came back — ack it with the cause + downtime
+            if not connected:  # we just came back, ack it with the cause + downtime
                 down = int(time.time() - lost_at)
                 scout.log("notice", f"scout agent reconnected after {down}s down; cause: {last_error}",
                           service="scout.agent", meta={"event": "reconnect", "down_secs": down, "cause": last_error})
@@ -315,12 +315,12 @@ def run_agent(scout: "Scout") -> int:
                     print("run command received")
                     _run_command(scout, cmd.get("command", ""))
                 elif c == "ping" and cmd.get("ack"):
-                    # Manual ping — reply visibly. (Periodic pings omit "ack" and just refresh
+                    # Manual ping, reply visibly. (Periodic pings omit "ack" and just refresh
                     # presence/version via this poll, so they don't flood the log stream.)
                     scout.log("info", "ping ack (pong)", service="scout.agent", meta={"event": "pong"})
         except KeyboardInterrupt:
             return 0
-        except Exception as e:  # server down / restart / network blip — re-poll shortly
+        except Exception as e:  # server down / restart / network blip, re-poll shortly
             if connected:
                 connected = False
                 lost_at = time.time()
