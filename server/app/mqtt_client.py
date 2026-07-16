@@ -188,6 +188,7 @@ class MqttClientBridge:
         await self._client.publish(topic, payload.encode(), qos=1, retain=True)
 
     async def stop(self) -> None:
+        was_connected = self._connected
         self._running = False
         self._connected = False
         if self._task:
@@ -197,12 +198,17 @@ class MqttClientBridge:
             except Exception:
                 pass
             self._task = None
-        try:
-            if self._client:
-                await self._client.publish(f"{self._prefix()}status", b"offline", qos=1, retain=True)
-                await self._client.disconnect()
-        except Exception:
-            pass
+        # Only touch the socket if we were actually connected, and never let a hung publish/
+        # disconnect block a reload (that would leave the old loop running on the stale config).
+        if self._client is not None:
+            try:
+                if was_connected:
+                    await asyncio.wait_for(
+                        self._client.publish(f"{self._prefix()}status", b"offline", qos=1, retain=True),
+                        timeout=3)
+                await asyncio.wait_for(self._client.disconnect(), timeout=3)
+            except Exception:
+                pass
         self._client = None
 
     async def reload(self) -> None:
