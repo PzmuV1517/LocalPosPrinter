@@ -36,7 +36,7 @@ class PrintHubService : Service() {
         // for the screen to come on. When the app is battery-whitelisted this fires on time; even
         // if it isn't, it still fires during Doze maintenance windows.
         private const val ACTION_HEARTBEAT = "com.sunmi.printhub.HEARTBEAT"
-        private const val HEARTBEAT_INTERVAL_MS = 60_000L
+        private const val HEARTBEAT_INTERVAL_MS = 30_000L
 
         fun start(context: Context) {
             val i = Intent(context, PrintHubService::class.java)
@@ -140,22 +140,33 @@ class PrintHubService : Service() {
     }
 
     private fun scheduleHeartbeat() {
-        val pi = PendingIntent.getService(
-            this, 2, Intent(this, PrintHubService::class.java).setAction(ACTION_HEARTBEAT),
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-            else PendingIntent.FLAG_UPDATE_CURRENT
-        )
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        else PendingIntent.FLAG_UPDATE_CURRENT
+        val fire = PendingIntent.getService(
+            this, 2, Intent(this, PrintHubService::class.java).setAction(ACTION_HEARTBEAT), flags)
         try {
             val am = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
             val next = System.currentTimeMillis() + HEARTBEAT_INTERVAL_MS
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, next, pi)
+            // Alarm-CLOCK alarms are exempt from Doze and fire at the exact time even in deep Doze,
+            // with no battery-optimization whitelist and on battery. That's what lets the listener
+            // wake and flush pushed jobs while the screen is off. (A user-visible next-alarm icon is
+            // the accepted trade-off for a dedicated always-on POS hub.)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val show = PendingIntent.getActivity(
+                    this, 3, Intent(this, MainActivity::class.java), flags)
+                am.setAlarmClock(android.app.AlarmManager.AlarmClockInfo(next, show), fire)
             } else {
-                am.setExact(android.app.AlarmManager.RTC_WAKEUP, next, pi)
+                am.setExact(android.app.AlarmManager.RTC_WAKEUP, next, fire)
             }
         } catch (t: Throwable) {
             Log.e(TAG, "Failed to schedule heartbeat", t)
+            // Fall back to the best Doze-tolerant option if setAlarmClock is unavailable.
+            try {
+                val am = getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+                am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP,
+                    System.currentTimeMillis() + HEARTBEAT_INTERVAL_MS, fire)
+            } catch (_: Throwable) {}
         }
     }
 
