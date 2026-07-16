@@ -33,7 +33,7 @@ class MainActivity : AppCompatActivity() {
         store = Store(this)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        setSupportActionBar(binding.toolbar)
+        binding.menuButton.setOnClickListener { showMenu(it) }
 
         val wv = binding.webview
         wv.settings.apply {
@@ -80,17 +80,20 @@ class MainActivity : AppCompatActivity() {
         if (binding.webview.canGoBack()) binding.webview.goBack() else super.onBackPressed()
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.main, menu)
-        return true
+    private fun showMenu(anchor: android.view.View) {
+        android.widget.PopupMenu(this, anchor).apply {
+            menuInflater.inflate(R.menu.main, menu)
+            setOnMenuItemClickListener { handleMenu(it.itemId) }
+            show()
+        }
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        when (item.itemId) {
+    private fun handleMenu(id: Int): Boolean {
+        when (id) {
             R.id.action_reload -> binding.webview.reload()
             R.id.action_server -> editServerUrl()
             R.id.action_update -> AppUpdater.check(this, silent = false)
-            else -> return super.onOptionsItemSelected(item)
+            else -> return false
         }
         return true
     }
