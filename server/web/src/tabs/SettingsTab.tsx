@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api'
-import { fmtTime, useGuard } from '../common'
+import { fmtTime, useGuard, useInterval } from '../common'
 import type { MqttSettings, MqttClientSettings, NotifySettings, Severity } from '../types'
 
 const SEVS: Severity[] = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info']
@@ -31,6 +31,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
   const [mqttC, setMqttC] = useState<MqttClientSettings>(EMPTY_MQTT_CLIENT)
   const [mqttCPw, setMqttCPw] = useState('')
   const [mqttCMsg, setMqttCMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [mqttCStat, setMqttCStat] = useState<{ connected: boolean; last_error?: string } | null>(null)
   const [updateLog, setUpdateLog] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
   const [passkeys, setPasskeys] = useState<api.Passkey[]>([])
@@ -57,6 +58,14 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     loadPasskeys()
   }, [guard, loadPasskeys])
   useEffect(() => { load() }, [load])
+
+  // Live MQTT-client link status so "Connecting…" reflects reality.
+  useInterval(() => {
+    if (!mqttC.enabled) { setMqttCStat(null); return }
+    api.getConfig().then((d) => setMqttCStat({
+      connected: !!d.mqtt_client?.connected, last_error: d.mqtt_client?.last_error,
+    })).catch(() => {})
+  }, 3000)
 
   async function addPasskey() {
     const label = prompt('Name this passkey (e.g. "Mac Touch ID", "Phone"):', 'this device')
@@ -120,7 +129,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     }
     if (mqttCPw) payload.password = mqttCPw
     const res = await guard(api.setConfig({ mqtt_client: payload }))
-    if (res?.ok) { setMqttCMsg({ ok: true, text: mqttC.enabled ? 'Connecting to your broker…' : 'Saved (client off).' }); setMqttCPw(''); load() }
+    if (res?.ok) { setMqttCMsg({ ok: true, text: mqttC.enabled ? 'Saved — see link status below.' : 'Saved (client off).' }); setMqttCPw(''); load() }
     else setMqttCMsg({ ok: false, text: 'Failed.' })
   }
 
@@ -272,6 +281,14 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
         </div>
         <div style={{ marginTop: 14 }}><button onClick={saveMqttC}>Save &amp; apply</button></div>
         {mqttCMsg && <div className={`result ${mqttCMsg.ok ? 'ok' : 'bad'}`}>{mqttCMsg.text}</div>}
+        {mqttC.enabled && mqttCStat && (
+          <div style={{ marginTop: 8, fontSize: 13 }}>
+            <span className={`dot ${mqttCStat.connected ? 'on' : ''}`} />{' '}
+            {mqttCStat.connected
+              ? <b>Connected to your broker.</b>
+              : <span>Not connected{mqttCStat.last_error ? <> — <span className="mono">{mqttCStat.last_error}</span></> : ' — connecting/retrying…'}</span>}
+          </div>
+        )}
         <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
           Point Home Assistant's MQTT integration at the same broker. Then call <span className="mono">notify.watchtower_printer</span> —
           no password needed (Watchtower relays as a trusted source). The printer must be online for prints to actually land.

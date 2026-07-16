@@ -81,6 +81,8 @@ export interface MqttClientSettings {
   tls: boolean
   prefix: string
   discovery: boolean
+  connected?: boolean
+  last_error?: string
 }
 
 export interface ServerConfig {

@@ -73,6 +73,8 @@ class MqttClientBridge:
         self._client: Optional[MQTTClient] = None
         self._task: Optional[asyncio.Task] = None
         self._running = False
+        self._connected = False
+        self._last_error = ""
 
     # ---- config ----
     def get_settings(self) -> dict:
@@ -86,6 +88,8 @@ class MqttClientBridge:
             "tls": g("mqtt_client_tls", "0") == "1",
             "prefix": g("mqtt_client_prefix", "watchtower/") or "watchtower/",
             "discovery": g("mqtt_client_discovery", "1") == "1",
+            "connected": self._connected,
+            "last_error": self._last_error,
         }
 
     def save_settings(self, body: dict) -> None:
@@ -147,6 +151,8 @@ class MqttClientBridge:
                 if st["discovery"]:
                     await self._publish_discovery(prefix)
                 await self._client.subscribe([(f"{prefix}print", 1), (f"{prefix}alert", 1)])
+                self._connected = True
+                self._last_error = ""
                 self.log.info("MQTT client connected to %s:%d", st["host"], st["port"])
                 while self._running:
                     msg = await self._client.deliver_message()
@@ -165,6 +171,8 @@ class MqttClientBridge:
             except asyncio.CancelledError:
                 break
             except Exception as exc:
+                self._connected = False
+                self._last_error = str(exc) or type(exc).__name__
                 if self._running:
                     self.log.warning("MQTT client link down (%s); retrying in 5s", exc)
                     try:
@@ -173,6 +181,7 @@ class MqttClientBridge:
                     except Exception:
                         pass
                     await asyncio.sleep(5)
+        self._connected = False
 
     async def _publish_discovery(self, prefix: str) -> None:
         topic, payload, _ = notify_discovery(prefix)
@@ -180,6 +189,7 @@ class MqttClientBridge:
 
     async def stop(self) -> None:
         self._running = False
+        self._connected = False
         if self._task:
             self._task.cancel()
             try:
