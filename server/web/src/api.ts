@@ -1,5 +1,5 @@
 // Typed API client. The session token lives in localStorage and is sent as a Bearer header,
-// so a page refresh keeps you logged in (App verifies it on load, clears it only when invalid).
+// so a page refresh keeps the session (App verifies it on load, clears it only when invalid).
 import type {
   LogsResponse, ServerConfig, TempPassword, HistoryRow, UpdateResult,
 } from './types'

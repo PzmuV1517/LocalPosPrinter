@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Printer access via Sunmi's official printer library (com.sunmi:printerlibrary). The library
- * bundles the correct Woyou AIDL and a SunmiPrinterService wrapper, so we don't hand-maintain
+ * bundles the correct Woyou AIDL and a SunmiPrinterService wrapper, instead of hand-maintaining
  * transaction ordering (which was misdispatching calls and crashing the service).
  *
  * Everything is rendered to a bitmap elsewhere and handed here as an image.

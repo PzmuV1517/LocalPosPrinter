@@ -88,7 +88,7 @@ class MainActivity : AppCompatActivity(), ConferManager.Listener {
         // Ensure the network channels are running.
         PrintHubService.start(this)
 
-        // Ask the OS to stop killing us for "battery", a POS hub must stay listening 24/7.
+        // Ask the OS to stop killing the app for "battery"; a POS hub listens 24/7.
         requestIgnoreBatteryOptimizations()
 
         // Quietly check GitHub for a newer release; prompts only if one is available.

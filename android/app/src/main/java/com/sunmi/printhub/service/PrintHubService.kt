@@ -121,7 +121,7 @@ class PrintHubService : Service() {
 
     /**
      * Fired by the alarm. Waking the CPU here lets any socket data that Doze deferred get
-     * processed (that's what flushes the backlog), and we re-acquire locks / force a reconnect
+     * processed (that flushes the backlog), and re-acquires locks / forces a reconnect
      * if the link actually dropped, all without needing the screen to come on.
      */
     private fun heartbeat() {
@@ -183,7 +183,7 @@ class PrintHubService : Service() {
     /**
      * The user swiped the app off the recent-apps list. On stock Android a foreground service
      * survives this, but aggressive OEM ROMs (Sunmi included) tear the whole process down anyway.
-     * START_STICKY alone can leave a multi-minute gap, so we also schedule an almost-immediate
+     * START_STICKY alone can leave a multi-minute gap, so it also schedules an almost-immediate
      * restart via AlarmManager: whichever path wins, the print listener is never down for long.
      */
     override fun onTaskRemoved(rootIntent: Intent?) {

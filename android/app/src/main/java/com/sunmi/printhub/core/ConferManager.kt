@@ -14,16 +14,11 @@ import org.json.JSONObject
 import java.util.concurrent.Executors
 
 /**
- * Client-side brain for Confer. Owns the session, the folder/chat tree, subscriptions and the
- * print decisions, and bridges the always-on device WebSocket (via [Hub.internet]) to the UI.
+ * Confer client: session, chat tree, subscriptions, and print decisions.
  *
- * Print rules (the product spec):
- *  * **Screen on**, a chat open  → messages in *that* chat print live (yours right, others left).
- *  * **Screen off**             → messages from *subscribed* chats/folders print, with a labelled
- *                                  separator whenever the source chat changes.
- *
- * Sending doesn't print locally, the server echoes every message back over the socket, so a sent
- * message prints through the exact same path as an incoming one (yours simply renders right-aligned).
+ * Screen on with a chat open: that chat prints (yours right, others left). Screen off: subscribed
+ * chats print, with a labelled separator when the source chat changes. Sending does not print
+ * locally; the server echoes the message back and it prints via the same path.
  */
 object ConferManager {
 
@@ -120,18 +115,16 @@ object ConferManager {
     }
 
     // ---- mode switching ----
-    // Two independent signals: (1) a "mode" frame over the print/internet-listener socket, which
-    // pauses print jobs and flips that server's badge to "in Confer mode"; (2) our own dedicated
-    // WebSocket to the (possibly different) Confer server, which carries the chat itself.
+    // Two signals: a "mode" frame on the print socket (pauses jobs, flips that server's badge),
+    // and a separate ConferSocket to the Confer server that carries the chat.
     fun setConferMode(on: Boolean) {
         settings().conferMode = on
         if (on) {
             if (!loggedIn) { main.post { listener?.onError("Log in to Confer first") }; return }
-            announcePrintMode(false)   // tell the print server we're chatting now
+            announcePrintMode(false)
             openSocket()
-            printStartup()             // cool boot-sequence diagnostics
-            // Head the transcript for whatever chat is already selected, so you don't have to
-            // switch away and back after enabling Confer mode to see the "TRANSCRIPT START".
+            printStartup()
+            // Head the active chat's transcript now, so enabling the mode shows it without a chat switch.
             if (activeChatId != 0) printTranscriptStart(activeChatId)
         } else {
             announcePrintMode(true)    // back to Print mode → resume print jobs
@@ -335,8 +328,7 @@ object ConferManager {
     fun openChat(chatId: Int) {
         val changed = chatId != activeChatId
         activeChatId = chatId
-        // Head the paper transcript with a terminal-style banner when you switch into a chat
-        // (only while actually in Confer mode, so browsing in Print mode doesn't waste paper).
+        // Terminal-style banner when a chat opens, but only in Confer mode (Print mode would waste paper).
         if (changed && conferModeOn) printTranscriptStart(chatId)
         io.execute {
             try {

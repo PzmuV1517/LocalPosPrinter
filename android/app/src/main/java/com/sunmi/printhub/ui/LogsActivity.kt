@@ -70,7 +70,7 @@ class LogsActivity : AppCompatActivity() {
     private fun readLogcat(): String {
         val pid = Process.myPid().toString()
         val base = arrayOf("logcat", "-d", "-v", "time", "-t", "1500")
-        // "App only": list our tags at Verbose and silence everything else (*:S).
+        // "App only": list the app tags at Verbose and silence everything else (*:S).
         val tagFilter = appTags.map { "$it:V" }.toTypedArray() + "*:S"
 
         val commands = if (appOnly) {

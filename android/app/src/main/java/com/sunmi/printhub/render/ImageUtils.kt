@@ -50,7 +50,7 @@ object ImageUtils {
         val h = src.height
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
 
-        // Grayscale buffer we can push error into.
+        // Grayscale buffer for error diffusion.
         val gray = FloatArray(w * h)
         val pixels = IntArray(w * h)
         src.getPixels(pixels, 0, w, 0, 0, w, h)

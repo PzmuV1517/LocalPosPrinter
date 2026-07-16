@@ -67,7 +67,7 @@ object ConferRenderer {
     }
 
     /**
-     * A text message. Your own sits on the right, your name, then the message closed with a `<`.
+     * A text message. Own messages sit on the right (name, then the body closed with a `<`).
      * Others sit on the left, their name, then the message opened with a `>`. The arrows point
      * inward toward each speaker's side. [showName] is false for a run of messages from the same
      * sender, so consecutive messages group tightly without repeating the name.

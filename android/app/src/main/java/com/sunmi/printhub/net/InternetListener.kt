@@ -34,7 +34,7 @@ class InternetListener(
     }
 
     // Short ping interval so a restarted/crashed server (or a proxy that silently drops the
-    // upstream) is noticed within ~10s and we reconnect, instead of appearing offline for a while.
+    // upstream) is noticed within ~10s, instead of appearing offline for a while.
     private val client = OkHttpClient.Builder()
         .pingInterval(10, TimeUnit.SECONDS)
         .connectTimeout(10, TimeUnit.SECONDS)
