@@ -26,6 +26,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from collections import deque
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -990,10 +991,12 @@ async def preview(request: Request) -> Response:
     admin = _authed_admin(request, payload)
     if not (admin or _valid_temp_password(payload.get("password"))):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    # STATUS renders server internals, operator only, and it builds its own content.
+    # STATUS and brief render internals, operator only, and build their own content.
+    if payload.get("format") in ("status", "brief") and not admin:
+        return JSONResponse({"error": "Not available on public prints"}, status_code=403)
+    if payload.get("format") == "brief":
+        return Response(content=rendermod.to_png_bytes(await _build_brief_image()), media_type="image/png")
     if payload.get("format") == "status":
-        if not admin:
-            return JSONResponse({"error": "STATUS is not available on public prints"}, status_code=403)
         payload = _status_payload(str(payload.get("by") or "dashboard preview"))
     if not admin:
         err = _public_limit_error(payload)
@@ -1034,6 +1037,10 @@ async def do_alert(request: Request) -> JSONResponse:
 
 async def _render_and_submit(payload: dict, on_delivered=None) -> bool:
     """Render to exact pixels and push to the device (trusted HMAC channel, no per-job password)."""
+    if payload.get("format") == "brief":
+        img = await _build_brief_image()
+        job = {"format": "image", "print_mode": "receipt", "image_raw_bitmap": rendermod.to_base64_png(img)}
+        return await relay.submit(job, on_delivered=on_delivered)
     if payload.get("format") == "status":
         payload = _status_payload(str(payload.get("by") or payload.get("service") or ""))
     img = rendermod.render(payload, print_width())
@@ -1087,10 +1094,10 @@ async def _print_payload(payload: dict, authed_device=None, authed_session=False
             return JSONResponse({"error": "Invalid password or no usages left"}, status_code=401)
         user, unlimited, temp_pw = row["user"], False, provided
 
-    # STATUS reveals host/scout internals, never allow it on a public (temp-password) print.
+    # STATUS and the daily brief reveal internals, never allow them on a public (temp-password) print.
+    if payload.get("format") in ("status", "brief") and temp_pw:
+        return JSONResponse({"error": "Not available on public prints"}, status_code=403)
     if payload.get("format") == "status":
-        if temp_pw:
-            return JSONResponse({"error": "STATUS is not available on public prints"}, status_code=403)
         payload = _status_payload(str(payload.get("by") or payload.get("service") or user))
 
     # Temp-password (public) prints are size-capped and image-free to protect the paper roll.
@@ -1100,7 +1107,8 @@ async def _print_payload(payload: dict, authed_device=None, authed_session=False
             return JSONResponse({"error": err}, status_code=400)
 
     try:
-        img = rendermod.render(payload, print_width())
+        img = await _build_brief_image() if payload.get("format") == "brief" \
+            else rendermod.render(payload, print_width())
     except rendermod.RenderError as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
 
@@ -1330,6 +1338,56 @@ def _status_payload(by: str) -> dict:
     # A touch denser than the global default so the data report stays legible on the roll.
     return {"format": "plain", "text": _build_status_report(by),
             "print_mode": "receipt", "text_size": 26}
+
+
+# Daily brief: weather (Open-Meteo, keyless) + a condensed systems summary.
+_BUCHAREST = "latitude=44.4268&longitude=26.1025"
+_weather_cache = {"ts": 0.0, "data": {}}
+
+
+def _fetch_weather() -> dict:
+    if _weather_cache["data"] and time.time() - _weather_cache["ts"] < 600:
+        return _weather_cache["data"]
+    url = ("https://api.open-meteo.com/v1/forecast?" + _BUCHAREST +
+           "&current=temperature_2m,weather_code&hourly=temperature_2m"
+           "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,"
+           "precipitation_probability_max,uv_index_max,wind_speed_10m_max"
+           "&timezone=Europe%2FBucharest&forecast_days=1")
+    with urllib.request.urlopen(url, timeout=10) as r:
+        data = json.loads(r.read().decode())
+    _weather_cache.update(ts=time.time(), data=data)
+    return data
+
+
+def _server_brief_lines() -> "list[str]":
+    now = time.time()
+    devices = db.list_devices()
+    active = [d for d in devices if not d["revoked"]]
+    printer = next((d for d in active if (d.get("meta") or {}).get("role") == "printer"), None)
+    scouts = [d for d in active if d is not printer]
+    pm = (printer or {}).get("meta") or {}
+    plink = "confer" if relay.any_confer() else ("online" if relay.is_connected() else "OFFLINE")
+    batt = f", batt {pm['battery']}%" if pm.get("battery") is not None else ""
+    up = sum(1 for d in scouts if agents.online(d["id"]) or
+             (d["last_seen_at"] and now - d["last_seen_at"] < max(90, (d.get("heartbeat_secs") or 0) * 2)))
+    counts = db.severity_counts()
+    errs = sum(sum(c.get(s, 0) for s in ("emerg", "alert", "crit", "err")) for c in counts.values())
+    lines = [f"> printer: {plink}{batt}",
+             f"> scouts:  {up}/{len(scouts)} up",
+             f"> 24h err: {errs}"]
+    silent = [d["id"] for d in scouts if d["id"] in _silent_devices]
+    if silent:
+        lines.append(f"> silent:  {', '.join(silent)}")
+    return lines
+
+
+async def _build_brief_image():
+    try:
+        weather = await asyncio.to_thread(_fetch_weather)
+    except Exception as exc:
+        log.warning("Weather fetch failed: %s", exc)
+        weather = {}
+    return rendermod.render_brief(weather, _server_brief_lines(), "GOOD MORNING")
 
 
 # Dedup so a flapping condition doesn't spam email/print repeatedly.

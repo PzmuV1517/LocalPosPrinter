@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import base64
 import io
+import math
 import os
 import random
 import re
 import time
+from datetime import datetime
 from typing import List, Optional
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
@@ -701,3 +703,139 @@ def to_png_bytes(img: Image.Image) -> bytes:
 
 def to_base64_png(img: Image.Image) -> str:
     return base64.b64encode(to_png_bytes(img)).decode("ascii")
+
+
+# ---------------------------------------------------------------------------
+# Daily brief (weather + systems), a terminal-style morning readout with graphics.
+# ---------------------------------------------------------------------------
+_WMO = {
+    0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+    45: "Fog", 48: "Rime fog", 51: "Light drizzle", 53: "Drizzle", 55: "Heavy drizzle",
+    61: "Light rain", 63: "Rain", 65: "Heavy rain", 66: "Freezing rain", 67: "Freezing rain",
+    71: "Light snow", 73: "Snow", 75: "Heavy snow", 77: "Snow grains",
+    80: "Rain showers", 81: "Rain showers", 82: "Violent showers",
+    85: "Snow showers", 86: "Snow showers", 95: "Thunderstorm", 96: "Thunderstorm, hail",
+    99: "Thunderstorm, hail",
+}
+
+
+def _vstack(imgs: List[Image.Image], w: int) -> Image.Image:
+    imgs = [i for i in imgs if i.height > 0]
+    out = _blank(w, sum(i.height for i in imgs) or 1)
+    y = 0
+    for i in imgs:
+        out.paste(i, ((w - i.width) // 2, y))
+        y += i.height
+    return out
+
+
+def _rule_img(w: int) -> Image.Image:
+    return _text_block("/" * 24, 20, True, "center", w)
+
+
+def _sun_arc(w: int, sunrise: str, sunset: str) -> Image.Image:
+    h = 112
+    img = _blank(w, h)
+    d = ImageDraw.Draw(img)
+    left, right = 44, w - 44
+    base = h - 24
+    ry = 40
+    d.arc([left, base - 2 * ry, right, base], 180, 360, fill=BLACK, width=2)
+    d.line([left - 8, base, right + 8, base], fill=BLACK, width=1)
+    frac = 0.5
+    try:
+        sr, ss = datetime.fromisoformat(sunrise), datetime.fromisoformat(sunset)
+        now = datetime.now(sr.tzinfo)
+        frac = min(1.0, max(0.0, (now - sr).total_seconds() / max(1.0, (ss - sr).total_seconds())))
+    except Exception:
+        pass
+    ang = math.pi * (1 - frac)
+    cx, rx = (left + right) / 2, (right - left) / 2
+    sx = cx - rx * math.cos(ang)
+    sy = base - ry * math.sin(ang)
+    r = 9
+    d.ellipse([sx - r, sy - r, sx + r, sy + r], fill=BLACK)
+    for a in range(0, 360, 45):  # sun rays
+        rr = a * math.pi / 180
+        d.line([sx + (r + 2) * math.cos(rr), sy + (r + 2) * math.sin(rr),
+                sx + (r + 6) * math.cos(rr), sy + (r + 6) * math.sin(rr)], fill=BLACK, width=1)
+    f = _font(18, False)
+    d.text((left - 24, base + 4), (sunrise or "")[11:16], font=f, fill=BLACK)
+    d.text((right - 22, base + 4), (sunset or "")[11:16], font=f, fill=BLACK)
+    return img
+
+
+def _temp_graph(w: int, times: List[str], temps: List[float]) -> Image.Image:
+    temps = [t for t in temps if t is not None]
+    if len(temps) < 2:
+        return _blank(w, 1)
+    h = 140
+    img = _blank(w, h)
+    d = ImageDraw.Draw(img)
+    left, right, top, bot = 36, w - 12, 14, h - 26
+    tmin, tmax = min(temps), max(temps)
+    span = max(1.0, tmax - tmin)
+    n = len(temps)
+
+    def X(i):
+        return left + (right - left) * i / (n - 1)
+
+    def Y(t):
+        return bot - (bot - top) * (t - tmin) / span
+
+    d.line([left, top, left, bot], fill=BLACK, width=1)
+    d.line([left, bot, right, bot], fill=BLACK, width=1)
+    d.line([(X(i), Y(t)) for i, t in enumerate(temps)], fill=BLACK, width=2)
+    f = _font(16, False)
+    d.text((2, top - 3), f"{round(tmax)}C", font=f, fill=BLACK)
+    d.text((2, bot - 9), f"{round(tmin)}C", font=f, fill=BLACK)
+    for i in range(0, n, 6):
+        hh = times[i][11:13] if i < len(times) else ""
+        d.text((X(i) - 6, bot + 4), hh, font=f, fill=BLACK)
+    return img
+
+
+def render_brief(weather: dict, server_lines: List[str], greeting: str,
+                 width: int = DEFAULT_WIDTH) -> Image.Image:
+    w = width
+    daily = weather.get("daily") or {}
+    cur = weather.get("current") or {}
+    hourly = weather.get("hourly") or {}
+
+    def d0(key, default=None):
+        v = daily.get(key)
+        return v[0] if isinstance(v, list) and v else default
+
+    parts = [
+        _text_block(greeting, 40, True, "center", w),
+        _text_block(time.strftime("%A, %d %B %Y"), TEXT_SIZE, False, "center", w),
+        _rule_img(w),
+        _text_block("BUCHAREST", 30, True, "center", w),
+    ]
+    if daily:
+        desc = _WMO.get(d0("weather_code", -1), "")
+        curt, hi, lo = cur.get("temperature_2m"), d0("temperature_2m_max"), d0("temperature_2m_min")
+        parts.append(_text_block(desc, TEXT_SIZE, False, "center", w))
+        parts.append(_text_block(f"now {curt}C   hi {hi}C   lo {lo}C", 24, False, "center", w))
+        parts.append(_sun_arc(w, d0("sunrise", ""), d0("sunset", "")))
+        parts.append(_temp_graph(w, hourly.get("time") or [], hourly.get("temperature_2m") or []))
+        extra = []
+        if d0("precipitation_probability_max") is not None:
+            extra.append(f"rain {d0('precipitation_probability_max')}%")
+        if d0("uv_index_max") is not None:
+            extra.append(f"UV {round(d0('uv_index_max'))}")
+        if d0("wind_speed_10m_max") is not None:
+            extra.append(f"wind {round(d0('wind_speed_10m_max'))}km/h")
+        if extra:
+            parts.append(_text_block("   ".join(extra), 24, False, "center", w))
+    else:
+        parts.append(_text_block("weather unavailable", 24, False, "center", w))
+
+    parts.append(_rule_img(w))
+    parts.append(_text_block("SYSTEMS", 28, True, "left", w))
+    for line in server_lines:
+        parts.append(_text_block(line, 24, False, "left", w))
+    parts.append(_rule_img(w))
+    parts.append(_text_block("HAVE A NICE DAY", 32, True, "center", w))
+    parts.append(_text_block("//// END TRANSMISSION ////", 18, False, "center", w))
+    return _vstack(parts, w)
