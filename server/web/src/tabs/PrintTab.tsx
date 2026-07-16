@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../api'
 import { useGuard } from '../common'
 
-type Fmt = 'plain' | 'centered' | 'boxed' | 'header_body' | 'banner' | 'list' | 'barcode' | 'qrcode' | 'image' | 'alert'
+type Fmt = 'plain' | 'centered' | 'boxed' | 'header_body' | 'banner' | 'list' | 'barcode' | 'qrcode' | 'image' | 'alert' | 'status'
 type Vis = Partial<Record<'title' | 'text' | 'text_size' | 'barcode_type' | 'border_style' | 'items' | 'image' | 'alert_type' | 'service', boolean>>
 
 const FIELD_VIS: Record<Fmt, Vis> = {
@@ -16,9 +16,10 @@ const FIELD_VIS: Record<Fmt, Vis> = {
   qrcode: { title: true, text: true },
   image: { image: true },
   alert: { text: true, alert_type: true, service: true },
+  status: {},  // server-generated report — no input fields
 }
 const FONT_FAMILY: Record<string, string> = { '1': 'monospace', '2': 'Jersey10', '3': 'Jacquard12', '4': 'Doto' }
-const FMTS: Fmt[] = ['plain', 'centered', 'boxed', 'header_body', 'banner', 'list', 'barcode', 'qrcode', 'image', 'alert']
+const FMTS: Fmt[] = ['plain', 'centered', 'boxed', 'header_body', 'banner', 'list', 'barcode', 'qrcode', 'image', 'alert', 'status']
 const SEVS = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug']
 const BORDERS = ['line', 'dashes', 'equals', 'asterisk', 'at', 'hash', 'dot', 'plus', 'wave', 'box', 'double', 'rounded']
 
@@ -125,6 +126,10 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
           <h2>Compose</h2>
           <label>Format</label>
           <select value={format} onChange={(e) => setFormat(e.target.value as Fmt)}>{FMTS.map((f) => <option key={f} value={f}>{f}</option>)}</select>
+
+          {format === 'status' && <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            Live system report — printer, host, watchdog and every scout. No fields needed; the preview shows current state.
+          </p>}
 
           {vis.alert_type && <><label>Alert type (severity)</label>
             <select value={alertType} onChange={(e) => setAlertType(e.target.value)}>{SEVS.map((s) => <option key={s} value={s}>{s}</option>)}</select></>}

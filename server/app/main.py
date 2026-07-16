@@ -963,6 +963,11 @@ async def preview(request: Request) -> Response:
     admin = _authed_admin(request, payload)
     if not (admin or _valid_temp_password(payload.get("password"))):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    # STATUS renders server internals — operator only, and it builds its own content.
+    if payload.get("format") == "status":
+        if not admin:
+            return JSONResponse({"error": "STATUS is not available on public prints"}, status_code=403)
+        payload = _status_payload(str(payload.get("by") or "dashboard preview"))
     if not admin:
         err = _public_limit_error(payload)
         if err:
