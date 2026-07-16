@@ -25,8 +25,8 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 # ---- layout constants (kept aligned with the Android renderer) ----
 DEFAULT_WIDTH = int(os.environ.get("PRINT_WIDTH", "384"))
 PAD = 12
-TEXT_SIZE = 26
-TITLE_SIZE = 40
+TEXT_SIZE = 30
+TITLE_SIZE = 44
 BORDER = 3
 DIVIDER = 2
 TAB_WIDTH = 4

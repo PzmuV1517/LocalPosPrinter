@@ -23,8 +23,8 @@ import com.sunmi.printhub.model.PrintPayload
 object ReceiptRenderer {
 
     private const val PAD = 12f
-    private const val TEXT_SIZE = 26f
-    private const val TITLE_SIZE = 40f
+    private const val TEXT_SIZE = 30f
+    private const val TITLE_SIZE = 44f
     private const val BORDER = 3f
     private const val DIVIDER = 2f
     private const val TAB_WIDTH = 4

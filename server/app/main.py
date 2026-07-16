@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import platform
 import shutil
 import socket
 import subprocess
@@ -1159,20 +1160,32 @@ def _ago(ts) -> str:
     return f"{s}d ago"
 
 
+def _kv(label: str, value) -> str:
+    return f" {label:<6}: {value}"
+
+
 def _host_lines() -> "list[str]":
     out = []
     try:
-        out.append(f"> node : {socket.gethostname()}")
+        out.append(_kv("node", socket.gethostname()))
+    except Exception:
+        pass
+    try:
+        out.append(_kv("os", f"{platform.system()} {platform.release()}"))
     except Exception:
         pass
     try:
         with open("/proc/uptime") as f:
-            out.append(f"> up   : {_dur(float(f.read().split()[0]))}")
+            out.append(_kv("up", _dur(float(f.read().split()[0]))))
     except Exception:
         pass
     try:
         la = os.getloadavg()
-        out.append(f"> load : {la[0]:.2f} {la[1]:.2f} {la[2]:.2f}")
+        out.append(_kv("load", f"{la[0]:.2f} {la[1]:.2f} {la[2]:.2f}"))
+    except Exception:
+        pass
+    try:
+        out.append(_kv("cpu", f"{os.cpu_count()} cores"))
     except Exception:
         pass
     try:
@@ -1183,91 +1196,105 @@ def _host_lines() -> "list[str]":
                 info[k] = int(v.split()[0])
         total, avail = info.get("MemTotal", 0) // 1024, info.get("MemAvailable", 0) // 1024
         if total:
-            out.append(f"> mem  : {total - avail}/{total} MB")
+            out.append(_kv("mem", f"{total - avail}/{total} MB"))
     except Exception:
         pass
     try:
         du = shutil.disk_usage("/")
-        out.append(f"> disk : {du.used // 10**9}/{du.total // 10**9} GB ({du.used * 100 // du.total}%)")
+        out.append(_kv("disk", f"{du.used // 10**9}/{du.total // 10**9} GB {du.used * 100 // du.total}%"))
     except Exception:
         pass
     try:
-        rss = ""
+        rss = "?"
         with open("/proc/self/status") as f:
             for line in f:
                 if line.startswith("VmRSS"):
                     rss = f"{int(line.split()[1]) // 1024} MB"
                     break
-        out.append(f"> proc : watchtower pid {os.getpid()} rss {rss}")
+        out.append(_kv("proc", f"pid {os.getpid()}"))
+        out.append(_kv("rss", rss))
     except Exception:
         pass
     return out
 
 
+def _scout_block(d: dict, counts: dict, now: float) -> "list[str]":
+    """A clearly-delimited block per scout so they're easy to tell apart."""
+    meta = d.get("meta") or {}
+    hb = d.get("heartbeat_secs") or 0
+    onl = agents.online(d["id"]) or bool(d["last_seen_at"] and now - d["last_seen_at"] < max(90, hb * 2))
+    m = meta.get("metrics") or {}
+    c = counts.get(d["id"], {})
+    crit = sum(c.get(s, 0) for s in ("emerg", "alert", "crit"))
+    err = c.get("err", 0)
+    warn = c.get("warning", 0)
+    bar = "#" * 20
+    L = [bar, f" {d['id']}", bar,
+         _kv("name", d.get("name") or "-"),
+         _kv("state", "UP" if onl else "DOWN"),
+         _kv("ver", meta.get("scout_version", "?")),
+         _kv("host", meta.get("host", "?")),
+         _kv("added", time.strftime("%Y-%m-%d", time.localtime(d["created_at"])) if d.get("created_at") else "?"),
+         _kv("seen", _ago(d["last_seen_at"])),
+         _kv("hb", f"{hb}s" if hb else "off")]
+    if m.get("load1") is not None:
+        L.append(_kv("load", f"{m['load1']} ({m.get('cpus', '?')}cpu)"))
+    if m.get("mem_pct") is not None:
+        L.append(_kv("mem", f"{m['mem_pct']}%"))
+    if m.get("disk_pct") is not None:
+        L.append(_kv("disk", f"{m['disk_pct']}%"))
+    if m.get("temp_c") is not None:
+        L.append(_kv("temp", f"{m['temp_c']}C"))
+    L.append(_kv("logs24", f"c{crit} e{err} w{warn}"))
+    L.append("")
+    return L
+
+
 def _build_status_report(by: str) -> str:
     now = time.time()
-    rule = "/" * 24
-    L = [rule, "   S T A T U S",
-         "   " + time.strftime("%Y-%m-%d %H:%M:%S"),
-         f"   req: {by or 'unknown'}", rule]
+    rule = "/" * 20
+    L = [rule, "      STATUS",
+         "  " + time.strftime("%Y-%m-%d %H:%M"),
+         f"  by: {by or 'unknown'}", rule, ""]
 
-    # Printer link
+    # Printer
     link = "CONFER" if relay.any_confer() else ("ONLINE" if relay.is_connected() else "OFFLINE")
-    L += ["[ PRINTER ]",
-          f"> link : {link}",
-          f"> queue: {sum(len(q) for q in relay.pending.values())} job(s)",
-          f"> width: {print_width()} px", ""]
+    L += ["== PRINTER ==",
+          _kv("link", link),
+          _kv("mode", "confer" if relay.any_confer() else "print"),
+          _kv("queue", f"{sum(len(q) for q in relay.pending.values())} jobs"),
+          _kv("width", f"{print_width()}px"), ""]
 
     # Host
-    L += ["[ HOST ]"] + _host_lines() + [""]
+    L += ["== HOST =="] + _host_lines() + [""]
 
-    # Watchdog (dead-man's-switch)
+    # Watchdog
     devices = db.list_devices()
-    armed = [d for d in devices if not d["revoked"] and (d.get("heartbeat_secs") or 0) > 0]
-    silent = [d["id"] for d in devices if d["id"] in _silent_devices]
-    L += ["[ WATCHDOG ]",
-          f"> armed : {len(armed)} device(s)",
-          f"> silent: {', '.join(silent) if silent else 'none'}", ""]
-
-    # Scouts
     active = [d for d in devices if not d["revoked"]]
+    armed = [d for d in active if (d.get("heartbeat_secs") or 0) > 0]
+    silent = [d["id"] for d in devices if d["id"] in _silent_devices]
+    L += ["== WATCHDOG ==",
+          _kv("devices", f"{len(active)} ({len(devices) - len(active)} revoked)"),
+          _kv("armed", f"{len(armed)}"),
+          _kv("silent", ", ".join(silent) if silent else "none"),
+          _kv("check", "30s"), ""]
+
+    # Scouts — one clearly-boxed block each
     counts = db.severity_counts()
-    L.append(f"[ SCOUTS ] ({len(active)})")
+    L.append(f"== SCOUTS ({len(active)}) ==")
+    L.append("")
     if not active:
-        L.append("> none paired")
-    for d in active:
-        meta = d.get("meta") or {}
-        hb = d.get("heartbeat_secs") or 0
-        onl = agents.online(d["id"]) or bool(
-            d["last_seen_at"] and now - d["last_seen_at"] < max(90, hb * 2))
-        L.append(f"- {d['id']}  [{'UP' if onl else 'DOWN'}]  v{meta.get('scout_version', '?')}")
-        if d.get("name"):
-            L.append(f"  {d['name']}")
-        if meta.get("host"):
-            L.append(f"  host: {meta['host']}")
-        m = meta.get("metrics") or {}
-        stats = []
-        if m.get("load1") is not None:
-            stats.append(f"load {m['load1']}/{m.get('cpus', '?')}")
-        if m.get("mem_pct") is not None:
-            stats.append(f"mem {m['mem_pct']}%")
-        if m.get("disk_pct") is not None:
-            stats.append(f"disk {m['disk_pct']}%")
-        if m.get("temp_c") is not None:
-            stats.append(f"{m['temp_c']}C")
-        if stats:
-            L.append("  " + "  ".join(stats))
-        c = counts.get(d["id"], {})
-        err = sum(c.get(s, 0) for s in ("emerg", "alert", "crit", "err"))
-        L.append(f"  seen {_ago(d['last_seen_at'])}" + (f" | hb {hb}s" if hb else ""))
-        L.append(f"  24h: err {err} / warn {c.get('warning', 0)}")
+        L.append(" none paired")
+    for d in sorted(active, key=lambda x: x["id"]):
+        L += _scout_block(d, counts, now)
     L.append(rule)
     return "\n".join(L)
 
 
 def _status_payload(by: str) -> dict:
+    # A touch denser than the global default so the data report stays legible on the roll.
     return {"format": "plain", "text": _build_status_report(by),
-            "print_mode": "receipt", "text_size": 22}
+            "print_mode": "receipt", "text_size": 26}
 
 
 # Dedup so a flapping condition doesn't spam email/print repeatedly.
