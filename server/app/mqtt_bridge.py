@@ -28,6 +28,7 @@ from amqtt.client import MQTTClient
 from passlib.apps import custom_app_context
 
 from .db import Database
+from .mqtt_client import notify_discovery
 
 
 class MqttBridge:
@@ -51,6 +52,7 @@ class MqttBridge:
             "username": g("mqtt_user", "") or "",
             "has_password": bool(g("mqtt_pass_hash")),
             "prefix": g("mqtt_prefix", "watchtower/") or "watchtower/",
+            "discovery": g("mqtt_discovery", "1") == "1",
         }
 
     def save_settings(self, body: dict) -> None:
@@ -64,6 +66,8 @@ class MqttBridge:
         if body.get("prefix"):
             p = str(body["prefix"])
             s("mqtt_prefix", p if p.endswith("/") else p + "/")
+        if "discovery" in body:
+            s("mqtt_discovery", "1" if body.get("discovery") else "0")
         if body.get("password"):
             s("mqtt_pass_hash", custom_app_context.hash(str(body["password"])))
 
@@ -105,6 +109,12 @@ class MqttBridge:
             self._client = MQTTClient(config={"auto_reconnect": False})
             await self._client.connect(uri)
             await self._client.subscribe([(f"{prefix}print", 1), (f"{prefix}alert", 1)])
+            # Publish HA availability + auto-discovery to our own broker (retained), so an HA that
+            # connects here sees a "Watchtower Printer" device without any manual YAML.
+            await self._client.publish(f"{prefix}status", b"online", qos=1, retain=True)
+            if self.db.get_config("mqtt_discovery", "1") == "1":
+                topic, payload, _ = notify_discovery(prefix)
+                await self._client.publish(topic, payload.encode(), qos=1, retain=True)
             while self._running:
                 msg = await self._client.deliver_message()
                 topic = msg.topic

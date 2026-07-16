@@ -29,6 +29,40 @@ from .db import Database
 NODE_ID = "watchtower_printer"
 
 
+def notify_discovery(prefix: str) -> tuple[str, str, str]:
+    """Return (config_topic, payload_json, status_topic) for the Home Assistant notify device.
+
+    Shared by both MQTT modes (hosted broker and outbound client) so they publish the identical
+    device — HA dedupes on the unique_id, so running both never makes two printers.
+    """
+    print_topic, status_topic = f"{prefix}print", f"{prefix}status"
+    device = {
+        "identifiers": [NODE_ID], "name": "Watchtower Printer",
+        "manufacturer": "Watchtower", "model": "MQTT bridge",
+    }
+    # HA's notify title/message map onto our title/text. No password needed — the broker
+    # connection is already authenticated and Watchtower relays as a trusted source.
+    command_template = (
+        "{\"format\":\"{{ data.format | default('plain') }}\","
+        "\"print_mode\":\"{{ data.print_mode | default('receipt') }}\","
+        "\"title\":{{ (title if title is defined and title else '') | to_json }},"
+        "\"text\":{{ (message if message is defined else '') | to_json }}"
+        "{% if data.barcode_type is defined %},\"barcode_type\":{{ data.barcode_type | to_json }}{% endif %}"
+        "{% if data.items is defined %},\"items\":{{ data.items | to_json }}{% endif %}"
+        "{% if data.image is defined %},\"image\":{{ data.image | to_json }}{% endif %}"
+        "{% if data.font is defined %},\"font\":{{ data.font | to_json }}{% endif %}"
+        "}"
+    )
+    cfg = {
+        "name": "Watchtower Printer", "unique_id": f"{NODE_ID}_notify",
+        "command_topic": print_topic, "command_template": command_template,
+        "availability_topic": status_topic,
+        "payload_available": "online", "payload_not_available": "offline",
+        "device": device,
+    }
+    return f"homeassistant/notify/{NODE_ID}/config", json.dumps(cfg), status_topic
+
+
 class MqttClientBridge:
     def __init__(self, db: Database, box: SecretBox, log):
         self.db = db
@@ -141,33 +175,8 @@ class MqttClientBridge:
                     await asyncio.sleep(5)
 
     async def _publish_discovery(self, prefix: str) -> None:
-        print_topic, status_topic = f"{prefix}print", f"{prefix}status"
-        device = {
-            "identifiers": [NODE_ID], "name": "Watchtower Printer",
-            "manufacturer": "Watchtower", "model": "MQTT bridge",
-        }
-        # HA's notify title/message map onto our title/text. No password needed — the broker
-        # connection is already authenticated and Watchtower relays as a trusted source.
-        command_template = (
-            "{\"format\":\"{{ data.format | default('plain') }}\","
-            "\"print_mode\":\"{{ data.print_mode | default('receipt') }}\","
-            "\"title\":{{ (title if title is defined and title else '') | to_json }},"
-            "\"text\":{{ (message if message is defined else '') | to_json }}"
-            "{% if data.barcode_type is defined %},\"barcode_type\":{{ data.barcode_type | to_json }}{% endif %}"
-            "{% if data.items is defined %},\"items\":{{ data.items | to_json }}{% endif %}"
-            "{% if data.image is defined %},\"image\":{{ data.image | to_json }}{% endif %}"
-            "{% if data.font is defined %},\"font\":{{ data.font | to_json }}{% endif %}"
-            "}"
-        )
-        notify_cfg = {
-            "name": "Watchtower Printer", "unique_id": f"{NODE_ID}_notify",
-            "command_topic": print_topic, "command_template": command_template,
-            "availability_topic": status_topic,
-            "payload_available": "online", "payload_not_available": "offline",
-            "device": device,
-        }
-        await self._client.publish(
-            f"homeassistant/notify/{NODE_ID}/config", json.dumps(notify_cfg).encode(), qos=1, retain=True)
+        topic, payload, _ = notify_discovery(prefix)
+        await self._client.publish(topic, payload.encode(), qos=1, retain=True)
 
     async def stop(self) -> None:
         self._running = False

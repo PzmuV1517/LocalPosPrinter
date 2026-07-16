@@ -69,6 +69,7 @@ export interface MqttSettings {
   username: string
   has_password: boolean
   prefix: string
+  discovery: boolean
 }
 
 export interface MqttClientSettings {

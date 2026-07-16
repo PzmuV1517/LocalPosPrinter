@@ -9,7 +9,7 @@ const EMPTY_NOTIFY: NotifySettings = {
   enabled: false, host: '', port: 587, security: 'starttls', username: '',
   from_addr: '', to_addr: '', min_sev: 'crit', has_password: false,
 }
-const EMPTY_MQTT: MqttSettings = { enabled: false, port: 1883, username: '', has_password: false, prefix: 'watchtower/' }
+const EMPTY_MQTT: MqttSettings = { enabled: false, port: 1883, username: '', has_password: false, prefix: 'watchtower/', discovery: true }
 const EMPTY_MQTT_CLIENT: MqttClientSettings = { enabled: false, host: '', port: 1883, username: '', has_password: false, tls: false, prefix: 'watchtower/', discovery: true }
 
 export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) {
@@ -104,7 +104,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
   const M = (patch: Partial<MqttSettings>) => setMqtt({ ...mqtt, ...patch })
   async function saveMqtt() {
     setMqttMsg({ ok: true, text: 'Applying…' })
-    const payload: Record<string, unknown> = { enabled: mqtt.enabled, port: mqtt.port, username: mqtt.username, prefix: mqtt.prefix }
+    const payload: Record<string, unknown> = { enabled: mqtt.enabled, port: mqtt.port, username: mqtt.username, prefix: mqtt.prefix, discovery: mqtt.discovery }
     if (mqttPw) payload.password = mqttPw
     const res = await guard(api.setConfig({ mqtt: payload }))
     if (res?.ok) { setMqttMsg({ ok: true, text: mqtt.enabled ? 'Broker (re)started.' : 'Saved (broker off).' }); setMqttPw(''); load() }
@@ -230,6 +230,9 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           <div><label>Username (blank = anonymous)</label><input value={mqtt.username} autoComplete="off" onChange={(e) => M({ username: e.target.value })} /></div>
           <div><label>Password {mqtt.has_password && '(set — blank keeps)'}</label><input type="password" value={mqttPw} autoComplete="new-password" onChange={(e) => setMqttPw(e.target.value)} /></div>
         </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none', marginTop: 8 }}>
+          <input type="checkbox" checked={mqtt.discovery} onChange={(e) => M({ discovery: e.target.checked })} style={{ width: 'auto' }} /> Publish HA discovery (auto-creates the device for any HA that connects here)
+        </label>
         <div style={{ marginTop: 14 }}><button onClick={saveMqtt}>Save &amp; apply</button></div>
         {mqttMsg && <div className={`result ${mqttMsg.ok ? 'ok' : 'bad'}`}>{mqttMsg.text}</div>}
         <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
