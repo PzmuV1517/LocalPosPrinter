@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Deque, Dict, List, Optional, Tuple
@@ -22,9 +21,6 @@ from fastapi import WebSocket
 class Client:
     ws: WebSocket
     device_id: str = "default"
-    ip: str = ""
-    connected_at: float = field(default_factory=time.time)
-    info: Dict[str, Any] = field(default_factory=dict)
     # A printer in Confer mode holds the same socket but must NOT receive print jobs (they'd
     # interleave with chat traffic). While confer is True it's not a print target, so jobs queue
     # and flush when it returns to Print mode.

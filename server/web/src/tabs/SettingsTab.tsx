@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api'
-import { fmtTime, useGuard, useInterval } from '../common'
+import { fmtTime, useGuard, useInterval, SEV_ORDER } from '../common'
 import type { MqttSettings, MqttClientSettings, NotifySettings, Severity } from '../types'
 
-const SEVS: Severity[] = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info']
+const SEVS = SEV_ORDER.slice(0, -1)
 
 const EMPTY_NOTIFY: NotifySettings = {
   enabled: false, host: '', port: 587, security: 'starttls', username: '',

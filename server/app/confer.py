@@ -96,10 +96,6 @@ class ConferHub:
             for c in self.conns
         ]
 
-    def printer_in_confer_mode(self) -> bool:
-        """True if at least one non-admin (a printer) is currently a Confer participant."""
-        return any(not c.is_admin for c in self.conns)
-
     async def _fanout(self, frame: dict, exclude: Optional[ConferConn] = None) -> None:
         for c in list(self.conns):
             if c is exclude:

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../api'
-import { useGuard } from '../common'
+import { useGuard, SEV_ORDER } from '../common'
 
 type Fmt = 'plain' | 'centered' | 'boxed' | 'header_body' | 'banner' | 'list' | 'barcode' | 'qrcode' | 'image' | 'alert' | 'status'
 type Vis = Partial<Record<'title' | 'text' | 'text_size' | 'barcode_type' | 'border_style' | 'items' | 'image' | 'alert_type' | 'service', boolean>>
@@ -20,7 +20,6 @@ const FIELD_VIS: Record<Fmt, Vis> = {
 }
 const FONT_FAMILY: Record<string, string> = { '1': 'monospace', '2': 'Jersey10', '3': 'Jacquard12', '4': 'Doto' }
 const FMTS: Fmt[] = ['plain', 'centered', 'boxed', 'header_body', 'banner', 'list', 'barcode', 'qrcode', 'image', 'alert', 'status']
-const SEVS = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info', 'debug']
 const BORDERS = ['line', 'dashes', 'equals', 'asterisk', 'at', 'hash', 'dot', 'plus', 'wave', 'box', 'double', 'rounded']
 
 export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
@@ -132,7 +131,7 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
           </p>}
 
           {vis.alert_type && <><label>Alert type (severity)</label>
-            <select value={alertType} onChange={(e) => setAlertType(e.target.value)}>{SEVS.map((s) => <option key={s} value={s}>{s}</option>)}</select></>}
+            <select value={alertType} onChange={(e) => setAlertType(e.target.value)}>{SEV_ORDER.map((s) => <option key={s} value={s}>{s}</option>)}</select></>}
           {vis.service && <><label>Issuing service</label><input value={service} placeholder="e.g. backup.service" onChange={(e) => setService(e.target.value)} /></>}
 
           <label>Print mode</label>
