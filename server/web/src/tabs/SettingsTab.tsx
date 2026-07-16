@@ -146,11 +146,9 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     try {
       const d = await guard(api.updateServer())
       if (!d) { setUpdating(false); return }
-      const tail = !d.ok ? '✗ Update failed, see log above.'
-        : d.changed ? `✓ Updated ${d.before} → ${d.after}. Restarting…` : '✓ Already up to date.'
-      setUpdateLog((d.log || '').trim() + '\n\n' + tail)
-      if (d.restarting) waitForRestart()
-    } catch { setUpdateLog((l) => (l ?? '') + '\n\nServer restarting…'); waitForRestart() }
+      setUpdateLog('Update started. Pulling latest and restarting, this page reconnects on its own.')
+      waitForRestart()
+    } catch { setUpdateLog('Server restarting, reconnecting…'); waitForRestart() }
     setUpdating(false)
   }
   async function doRestart() {

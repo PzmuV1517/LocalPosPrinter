@@ -128,6 +128,7 @@ class PrintHubService : Service() {
         if (wakeLock?.isHeld != true || wifiLock?.isHeld != true) {
             releaseLocks(); acquireLocks()
         }
+        Hub.sendPrinterStatus()
         if (!Hub.internetConnected && Hub.settings.internetEnabled && Hub.settings.internetDomain.isNotBlank()) {
             Log.i(TAG, "Heartbeat: internet link down, reconnecting")
             stopInternet()

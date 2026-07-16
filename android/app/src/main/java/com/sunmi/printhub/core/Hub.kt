@@ -17,6 +17,8 @@ object Hub {
         private set
     lateinit var jobLog: JobLog
         private set
+    lateinit var appContext: Context
+        private set
 
     @Volatile
     var initialised = false
@@ -42,6 +44,7 @@ object Hub {
     fun init(context: Context) {
         if (initialised) return
         val app = context.applicationContext
+        appContext = app
         settings = Settings(app)
         printer = PrinterManager(app)
         jobLog = JobLog(app)
@@ -63,5 +66,22 @@ object Hub {
             scoutKey = key
         }
         c.ship(severity, message, service, noPrint = noPrint)
+    }
+
+    // Report battery and serial to Watchtower over the internet socket, so the dashboard and
+    // STATUS report show the printer as a printer (not a scout) with live power state.
+    fun sendPrinterStatus() {
+        if (!initialised) return
+        val net = internet ?: return
+        try {
+            val bm = appContext.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+            val frame = org.json.JSONObject()
+                .put("type", "printer_status")
+                .put("battery", bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY))
+                .put("charging", bm.isCharging)
+            printer.serialNo()?.let { frame.put("serial", it) }
+            net.sendFrame(frame.toString())
+        } catch (_: Throwable) {
+        }
     }
 }

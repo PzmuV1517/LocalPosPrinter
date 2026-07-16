@@ -378,6 +378,12 @@ class Database:
                 )
             self._conn.commit()
 
+    def device_meta(self, device_id: str) -> dict:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT meta_json FROM devices WHERE id=?", (device_id,)).fetchone()
+        return json.loads(row["meta_json"] or "{}") if row else {}
+
     def set_heartbeat(self, device_id: str, seconds: int) -> bool:
         """Expected reporting interval for the dead-man's-switch. 0 disables it."""
         with self._lock:

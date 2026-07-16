@@ -104,6 +104,7 @@ class InternetListener(
                 Hub.reportEvent("info", "printer connected to Watchtower", "printer.net")
                 // Re-announce Confer mode after a (re)connect so chat resumes without user action.
                 ConferManager.onSocketOpen()
+                Hub.sendPrinterStatus()
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {

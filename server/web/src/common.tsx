@@ -86,22 +86,30 @@ export function DeviceCard(
   { d, counts, actions }: { d: Device; counts: SevCounts; actions?: DeviceActions },
 ) {
   const online = d.agent_online || (!!d.last_seen_at && Date.now() / 1000 - d.last_seen_at < 120)
+  const isPrinter = d.meta?.role === 'printer'
   const version = (d.meta?.scout_version as string) || ''
+  const battery = d.meta?.battery as number | undefined
+  const serial = d.meta?.serial as string | undefined
   const [hb, setHb] = useState(String(d.heartbeat_secs || 0))
   const [cmd, setCmd] = useState('')
   const metrics = (d.meta?.metrics as Record<string, unknown>) || {}
   return (
     <div className="device">
-      <div className="name">{d.name || d.id} {d.revoked && <span className="pill bad">revoked</span>}</div>
+      <div className="name">{d.name || d.id}{' '}
+        <span className="pill">{isPrinter ? 'printer' : 'scout'}</span>
+        {d.revoked && <span className="pill bad">revoked</span>}</div>
       <div className="id mono">{d.id}</div>
       <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
         <span className={`dot ${online ? 'on' : ''}`} />
         {d.agent_online ? 'agent online' : online ? 'online' : 'offline'} · {d.last_seen_at ? fmtTime(d.last_seen_at) : 'never'}
-        {version && <> · scout {version}</>}
+        {isPrinter
+          ? (battery != null && <> · {battery}% {d.meta?.charging ? 'charging' : 'on battery'}</>)
+          : (version && <> · scout {version}</>)}
       </div>
-      <HostMetrics m={metrics} />
+      {isPrinter ? (serial && <div className="muted" style={{ fontSize: 11 }}>serial {serial}</div>)
+        : <HostMetrics m={metrics} />}
       <div className="sevs"><SevPills sevs={counts[d.id] || {}} /></div>
-      {actions && !d.revoked && <>
+      {actions && !d.revoked && !isPrinter && <>
         <div className="devctl">
           <span className="muted" style={{ fontSize: 11 }}>heartbeat</span>
           <input value={hb} onChange={(e) => setHb(e.target.value)} style={{ width: 60 }} />
@@ -116,7 +124,7 @@ export function DeviceCard(
       </>}
       {actions && (
         <div className="actions" style={{ flexWrap: 'wrap' }}>
-          {!d.revoked && <>
+          {!d.revoked && !isPrinter && <>
             <button className="ghost mini" onClick={actions.onPing}>Ping</button>
             <button className="ghost mini" onClick={actions.onRestart}>Restart</button>
             <button className="ghost mini" onClick={actions.onUpdate}>Update</button>

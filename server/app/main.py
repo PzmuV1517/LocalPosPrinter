@@ -938,22 +938,29 @@ async def config_restart(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "restarting": True})
 
 
+async def _update_and_restart() -> None:
+    result = await asyncio.to_thread(_run_update)
+    log.info("Self-update: changed=%s %s->%s ok=%s",
+             result.get("changed"), result.get("before"), result.get("after"), result.get("ok"))
+    if not result.get("restarting"):
+        return
+    try:
+        await _render_and_submit(_deploy_payload(result["before"], result["after"]))
+    except Exception as exc:
+        log.warning("Deploy receipt failed: %s", exc)
+    await relay.close_all()
+    threading.Timer(1.5, _restart_process).start()
+
+
 @app.post("/config/update")
 async def config_update(request: Request) -> JSONResponse:
     _, body = await _read(request)
     if not _authed_admin(request, body):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
-    result = await asyncio.to_thread(_run_update)
-    log.info("Self-update requested: changed=%s %s->%s ok=%s",
-             result.get("changed"), result.get("before"), result.get("after"), result.get("ok"))
-    if result.get("restarting"):
-        try:
-            await _render_and_submit(_deploy_payload(result["before"], result["after"]))
-        except Exception as exc:
-            log.warning("Deploy receipt failed: %s", exc)
-        await relay.close_all()
-        threading.Timer(1.5, _restart_process).start()
-    return JSONResponse(result)
+    # Run the slow pull + pip in the background and respond at once, so a long update never trips
+    # the reverse proxy timeout (502). The client polls /healthz and reloads when the server is back.
+    asyncio.create_task(_update_and_restart())
+    return JSONResponse({"ok": True, "restarting": True, "started": True})
 
 
 # ---------------------------------------------------------------------------
@@ -1276,35 +1283,44 @@ def _build_status_report(by: str) -> str:
          "  " + time.strftime("%Y-%m-%d %H:%M"),
          f"  by: {by or 'unknown'}", rule, ""]
 
+    devices = db.list_devices()
+    active = [d for d in devices if not d["revoked"]]
+    printer_dev = next((d for d in active if (d.get("meta") or {}).get("role") == "printer"), None)
+    scouts = [d for d in active if d is not printer_dev]
+
     # Printer
     link = "CONFER" if relay.any_confer() else ("ONLINE" if relay.is_connected() else "OFFLINE")
     L += ["== PRINTER ==",
           _kv("link", link),
           _kv("mode", "confer" if relay.any_confer() else "print"),
           _kv("queue", f"{sum(len(q) for q in relay.pending.values())} jobs"),
-          _kv("width", f"{print_width()}px"), ""]
+          _kv("width", f"{print_width()}px")]
+    pm = (printer_dev or {}).get("meta") or {}
+    if pm.get("battery") is not None:
+        L.append(_kv("battery", f"{pm['battery']}% {'charging' if pm.get('charging') else 'on battery'}"))
+    if pm.get("serial"):
+        L.append(_kv("serial", pm["serial"]))
+    L.append("")
 
     # Host
     L += ["== HOST =="] + _host_lines() + [""]
 
-    # Watchdog
-    devices = db.list_devices()
-    active = [d for d in devices if not d["revoked"]]
-    armed = [d for d in active if (d.get("heartbeat_secs") or 0) > 0]
-    silent = [d["id"] for d in devices if d["id"] in _silent_devices]
+    # Watchdog (scouts only, the printer is not a dead-man's-switch target)
+    armed = [d for d in scouts if (d.get("heartbeat_secs") or 0) > 0]
+    silent = [d["id"] for d in scouts if d["id"] in _silent_devices]
     L += ["== WATCHDOG ==",
-          _kv("devices", f"{len(active)} ({len(devices) - len(active)} revoked)"),
+          _kv("scouts", f"{len(scouts)} ({len(devices) - len(active)} revoked)"),
           _kv("armed", f"{len(armed)}"),
           _kv("silent", ", ".join(silent) if silent else "none"),
           _kv("check", "30s"), ""]
 
     # Scouts, one clearly-boxed block each
     counts = db.severity_counts()
-    L.append(f"== SCOUTS ({len(active)}) ==")
+    L.append(f"== SCOUTS ({len(scouts)}) ==")
     L.append("")
-    if not active:
+    if not scouts:
         L.append(" none paired")
-    for d in sorted(active, key=lambda x: x["id"]):
+    for d in sorted(scouts, key=lambda x: x["id"]):
         L += _scout_block(d, counts, now)
     L.append(rule)
     return "\n".join(L)
@@ -1686,6 +1702,10 @@ async def messages(ws: WebSocket) -> None:
     # canonical print target "default", that's what is_connected() and submit() look for.
     client = await relay.register(ws, "default")
     log.info("Printer device connected: %s", auth_id)
+    # Tag this device as the printer (distinct from scouts) even before its first status frame.
+    pm = db.device_meta(auth_id)
+    pm["role"] = "printer"
+    db.touch_device(auth_id, meta=pm)
 
     # This socket carries print jobs (and only the Confer *mode switch*). The chat itself rides a
     # separate /confer/ws connection to whichever Confer server the printer is configured for, so
@@ -1708,6 +1728,16 @@ async def messages(ws: WebSocket) -> None:
                 elif mode == "print":
                     await relay.set_confer_mode(client, False)
                     log.info("Printer %s returned to Print mode", auth_id)
+            elif frame.get("type") == "printer_status":
+                pm = db.device_meta(auth_id)
+                pm["role"] = "printer"
+                if "battery" in frame:
+                    pm["battery"] = frame.get("battery")
+                if "charging" in frame:
+                    pm["charging"] = bool(frame.get("charging"))
+                if frame.get("serial"):
+                    pm["serial"] = str(frame.get("serial"))
+                db.touch_device(auth_id, meta=pm)
             # Any other frame is ignored (kept for forward-compat).
     except WebSocketDisconnect:
         pass
