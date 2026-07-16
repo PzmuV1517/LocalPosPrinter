@@ -14,6 +14,7 @@
         android:background="@drawable/confer_bubble"
         android:maxWidth="260dp"
         android:padding="8dp"
-        android:textColor="#111111"
+        android:textColor="@color/wt_text"
+        android:fontFamily="monospace"
         android:textSize="14sp" />
 </LinearLayout>

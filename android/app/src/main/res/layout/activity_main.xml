@@ -2,9 +2,40 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:background="@color/wt_bg">
 
-    <!-- Simple tab bar (theme-agnostic; two toggling buttons) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingTop="14dp"
+        android:paddingBottom="6dp">
+
+        <TextView
+            style="@style/WtBrand"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="WATCHTOWER" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="print hub"
+            android:textAllCaps="true"
+            android:letterSpacing="0.2"
+            android:textColor="@color/wt_muted"
+            android:textSize="11sp"
+            android:layout_marginTop="2dp" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="@color/wt_border" />
+
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

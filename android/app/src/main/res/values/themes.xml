@@ -1,7 +1,37 @@
 <resources>
-    <style name="Theme.PrintHub" parent="Theme.MaterialComponents.Light.DarkActionBar">
-        <item name="colorPrimary">#1565C0</item>
-        <item name="colorPrimaryDark">#0D47A1</item>
-        <item name="colorAccent">#FF6F00</item>
+    <style name="Theme.PrintHub" parent="Theme.AppCompat">
+        <item name="colorPrimary">@color/wt_surface</item>
+        <item name="colorPrimaryDark">@color/wt_bg</item>
+        <item name="colorAccent">@color/wt_text</item>
+        <item name="android:colorBackground">@color/wt_bg</item>
+        <item name="android:windowBackground">@color/wt_bg</item>
+        <item name="android:textColor">@color/wt_text</item>
+        <item name="android:textColorPrimary">@color/wt_text</item>
+        <item name="android:textColorSecondary">@color/wt_muted</item>
+        <item name="android:textColorHint">@color/wt_muted</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:editTextBackground">@drawable/wt_input</item>
+        <item name="buttonStyle">@style/WtButton</item>
+        <item name="actionBarStyle">@style/WtActionBar</item>
+    </style>
+
+    <style name="WtActionBar" parent="Widget.AppCompat.ActionBar.Solid">
+        <item name="background">@color/wt_bg</item>
+        <item name="titleTextStyle">@style/WtActionBarTitle</item>
+    </style>
+
+    <style name="WtActionBarTitle" parent="TextAppearance.AppCompat.Widget.ActionBar.Title">
+        <item name="android:textColor">@color/wt_text</item>
+        <item name="android:letterSpacing">0.25</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="WtButton" parent="Widget.AppCompat.Button">
+        <item name="android:background">@drawable/wt_button</item>
+        <item name="android:textColor">@color/wt_text</item>
+        <item name="android:textAllCaps">true</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:fontFamily">monospace</item>
     </style>
 </resources>

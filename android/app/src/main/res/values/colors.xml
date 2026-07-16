@@ -1,0 +1,11 @@
+<resources>
+    <color name="wt_bg">#FF000000</color>
+    <color name="wt_surface">#FF0E0E0E</color>
+    <color name="wt_surface2">#FF161616</color>
+    <color name="wt_border">#FF262626</color>
+    <color name="wt_text">#FFEDEDED</color>
+    <color name="wt_muted">#FF6E6E6E</color>
+    <color name="wt_hot">#FFE5484D</color>
+    <color name="wt_button">#FF1E1E1E</color>
+    <color name="wt_button_border">#FF333333</color>
+</resources>
