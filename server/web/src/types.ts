@@ -71,6 +71,17 @@ export interface MqttSettings {
   prefix: string
 }
 
+export interface MqttClientSettings {
+  enabled: boolean
+  host: string
+  port: number
+  username: string
+  has_password: boolean
+  tls: boolean
+  prefix: string
+  discovery: boolean
+}
+
 export interface ServerConfig {
   username: string
   print_width: number
@@ -81,6 +92,7 @@ export interface ServerConfig {
   disk_alert_pct: number
   notify: NotifySettings
   mqtt: MqttSettings
+  mqtt_client: MqttClientSettings
 }
 
 export interface UpdateResult {

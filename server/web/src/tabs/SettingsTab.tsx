@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api'
 import { fmtTime, useGuard } from '../common'
-import type { MqttSettings, NotifySettings, Severity } from '../types'
+import type { MqttSettings, MqttClientSettings, NotifySettings, Severity } from '../types'
 
 const SEVS: Severity[] = ['emerg', 'alert', 'crit', 'err', 'warning', 'notice', 'info']
 
@@ -10,6 +10,7 @@ const EMPTY_NOTIFY: NotifySettings = {
   from_addr: '', to_addr: '', min_sev: 'crit', has_password: false,
 }
 const EMPTY_MQTT: MqttSettings = { enabled: false, port: 1883, username: '', has_password: false, prefix: 'watchtower/' }
+const EMPTY_MQTT_CLIENT: MqttClientSettings = { enabled: false, host: '', port: 1883, username: '', has_password: false, tls: false, prefix: 'watchtower/', discovery: true }
 
 export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) {
   const guard = useGuard(onUnauthorized)
@@ -27,6 +28,9 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
   const [mqtt, setMqtt] = useState<MqttSettings>(EMPTY_MQTT)
   const [mqttPw, setMqttPw] = useState('')
   const [mqttMsg, setMqttMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [mqttC, setMqttC] = useState<MqttClientSettings>(EMPTY_MQTT_CLIENT)
+  const [mqttCPw, setMqttCPw] = useState('')
+  const [mqttCMsg, setMqttCMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [updateLog, setUpdateLog] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
   const [passkeys, setPasskeys] = useState<api.Passkey[]>([])
@@ -48,6 +52,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
       setUser(d.username)
       setNotify(d.notify || EMPTY_NOTIFY)
       setMqtt(d.mqtt || EMPTY_MQTT)
+      setMqttC(d.mqtt_client || EMPTY_MQTT_CLIENT)
     }
     loadPasskeys()
   }, [guard, loadPasskeys])
@@ -104,6 +109,19 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     const res = await guard(api.setConfig({ mqtt: payload }))
     if (res?.ok) { setMqttMsg({ ok: true, text: mqtt.enabled ? 'Broker (re)started.' : 'Saved (broker off).' }); setMqttPw(''); load() }
     else setMqttMsg({ ok: false, text: 'Failed.' })
+  }
+
+  const MC = (patch: Partial<MqttClientSettings>) => setMqttC({ ...mqttC, ...patch })
+  async function saveMqttC() {
+    setMqttCMsg({ ok: true, text: 'Applying…' })
+    const payload: Record<string, unknown> = {
+      enabled: mqttC.enabled, host: mqttC.host, port: mqttC.port, username: mqttC.username,
+      tls: mqttC.tls, prefix: mqttC.prefix, discovery: mqttC.discovery,
+    }
+    if (mqttCPw) payload.password = mqttCPw
+    const res = await guard(api.setConfig({ mqtt_client: payload }))
+    if (res?.ok) { setMqttCMsg({ ok: true, text: mqttC.enabled ? 'Connecting to your broker…' : 'Saved (client off).' }); setMqttCPw(''); load() }
+    else setMqttCMsg({ ok: false, text: 'Failed.' })
   }
 
   async function waitForRestart() {
@@ -216,6 +234,44 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
         {mqttMsg && <div className={`result ${mqttMsg.ok ? 'ok' : 'bad'}`}>{mqttMsg.text}</div>}
         <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
           Expose the port through your firewall/proxy for external publishers. With no username it accepts anonymous connections (LAN only).
+        </p>
+      </div>
+
+      <div className="card">
+        <h2>MQTT client (connect to your broker)</h2>
+        <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
+          Instead of hosting a broker, Watchtower connects OUT to a broker you already run (e.g. Home Assistant's
+          Mosquitto), publishes Home Assistant <b>auto-discovery</b> so a <span className="mono">Watchtower Printer</span> device
+          appears on its own, and relays anything published to <span className="mono">{mqttC.prefix}print</span> to the printer.
+          Runs alongside the hosted broker — use either or both.
+        </p>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none' }}>
+          <input type="checkbox" checked={mqttC.enabled} onChange={(e) => MC({ enabled: e.target.checked })} style={{ width: 'auto' }} /> Enable MQTT client
+        </label>
+        <div className="row">
+          <div><label>Broker host</label><input value={mqttC.host} placeholder="e.g. 192.168.1.10 or your-ha.example.com" onChange={(e) => MC({ host: e.target.value })} /></div>
+          <div><label>Port</label><input type="number" value={mqttC.port} onChange={(e) => MC({ port: +e.target.value })} /></div>
+        </div>
+        <div className="row">
+          <div><label>Username</label><input value={mqttC.username} autoComplete="off" onChange={(e) => MC({ username: e.target.value })} /></div>
+          <div><label>Password {mqttC.has_password && '(set — blank keeps)'}</label><input type="password" value={mqttCPw} autoComplete="new-password" onChange={(e) => setMqttCPw(e.target.value)} /></div>
+        </div>
+        <div className="row">
+          <div><label>Topic prefix</label><input value={mqttC.prefix} onChange={(e) => MC({ prefix: e.target.value })} /></div>
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', gap: 6 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none' }}>
+              <input type="checkbox" checked={mqttC.tls} onChange={(e) => MC({ tls: e.target.checked })} style={{ width: 'auto' }} /> Use TLS (mqtts)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, textTransform: 'none' }}>
+              <input type="checkbox" checked={mqttC.discovery} onChange={(e) => MC({ discovery: e.target.checked })} style={{ width: 'auto' }} /> Publish HA discovery
+            </label>
+          </div>
+        </div>
+        <div style={{ marginTop: 14 }}><button onClick={saveMqttC}>Save &amp; apply</button></div>
+        {mqttCMsg && <div className={`result ${mqttCMsg.ok ? 'ok' : 'bad'}`}>{mqttCMsg.text}</div>}
+        <p className="muted" style={{ fontSize: 11, marginTop: 10 }}>
+          Point Home Assistant's MQTT integration at the same broker. Then call <span className="mono">notify.watchtower_printer</span> —
+          no password needed (Watchtower relays as a trusted source). The printer must be online for prints to actually land.
         </p>
       </div>
 

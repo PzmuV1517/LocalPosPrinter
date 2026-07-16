@@ -64,9 +64,11 @@ auth = Auth(db, skew_secs=HMAC_SKEW_SECS)
 from .notify import Notifier  # noqa: E402  (after db/box exist)
 from .passkeys import Passkeys  # noqa: E402
 from .mqtt_bridge import MqttBridge  # noqa: E402
+from .mqtt_client import MqttClientBridge  # noqa: E402
 notifier = Notifier(db, box)
 passkeys = Passkeys(db)
 mqtt_bridge = MqttBridge(db, DATA_DIR, log)
+mqtt_client = MqttClientBridge(db, box, log)
 from .confer import ConferHub, ConferSessions, ConferConn  # noqa: E402
 confer_hub = ConferHub(db)
 confer_sessions = ConferSessions(db, auth)
@@ -784,6 +786,7 @@ async def config_get(request: Request) -> JSONResponse:
             "disk_alert_pct": disk_alert_pct(),
             "notify": notifier.get_settings(),
             "mqtt": mqtt_bridge.get_settings(),
+            "mqtt_client": mqtt_client.get_settings(),
         }
     )
 
@@ -810,6 +813,9 @@ async def config_set(request: Request) -> JSONResponse:
     if isinstance(body.get("mqtt"), dict):
         mqtt_bridge.save_settings(body["mqtt"])
         await mqtt_bridge.reload()
+    if isinstance(body.get("mqtt_client"), dict):
+        mqtt_client.save_settings(body["mqtt_client"])
+        await mqtt_client.reload()
     # Changing credentials requires a valid session (already checked above).
     new_user = (body.get("new_master_username") or "").strip()
     if new_user:
@@ -1029,6 +1035,7 @@ async def _mqtt_on_message(kind: str, payload: dict) -> None:
 
 
 mqtt_bridge.on_message = _mqtt_on_message
+mqtt_client.on_message = _mqtt_on_message
 
 
 async def _print_payload(payload: dict, authed_device=None, authed_session=False) -> JSONResponse:
@@ -1635,6 +1642,10 @@ async def _startup() -> None:
         await mqtt_bridge.start()
     except Exception as exc:
         log.error("MQTT bridge failed to start: %s", exc)
+    try:
+        await mqtt_client.start()
+    except Exception as exc:
+        log.error("MQTT client failed to start: %s", exc)
     log.info("Watchtower up. configured=%s auto-print<=%s fuse=%d/min retention=%dd",
              db.is_configured(), db.get_config("auto_print_min_sev", _DEF_MIN_SEV),
              auto_print_fuse(), retention_days())
@@ -1645,4 +1656,5 @@ async def _shutdown() -> None:
     # On SIGTERM (systemctl restart, docker stop) close device sockets so they reconnect fast.
     await relay.close_all()
     await mqtt_bridge.stop()
+    await mqtt_client.stop()
     log.info("Shutdown: closed device connections")
