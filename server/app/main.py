@@ -888,6 +888,23 @@ def _run_update() -> dict:
             "restarting": ok and changed, "log": "\n\n".join(lines)}
 
 
+def _deploy_payload(before: str, after: str) -> dict:
+    root = _repo_root() or _SERVER_DIR
+    commits = subprocess.run(
+        ["git", "-C", root, "log", "--oneline", "--no-decorate", f"{before}..{after}"],
+        capture_output=True, text=True).stdout.strip().splitlines()
+    rule = "/" * 20
+    L = [rule, "  DEPLOY", "  " + time.strftime("%Y-%m-%d %H:%M"),
+         _kv("from", before), _kv("to", after), _kv("commits", str(len(commits))), rule, ""]
+    L += ["> " + c for c in commits[:20]]
+    if len(commits) > 20:
+        L.append(f"  +{len(commits) - 20} more")
+    L.append(rule)
+    # ponytail: printed just before restart, best-effort. An offline printer misses it (the
+    # queue is in memory). Persist to disk and replay on boot if that ever matters.
+    return {"format": "plain", "text": "\n".join(L), "text_size": 26, "print_mode": "receipt"}
+
+
 def _restart_process() -> None:
     cmd = os.environ.get("UPDATE_RESTART_CMD")
     try:
@@ -930,9 +947,11 @@ async def config_update(request: Request) -> JSONResponse:
     log.info("Self-update requested: changed=%s %s->%s ok=%s",
              result.get("changed"), result.get("before"), result.get("after"), result.get("ok"))
     if result.get("restarting"):
-        # Tell the printer(s) we're restarting so they reconnect the moment we're back up.
+        try:
+            await _render_and_submit(_deploy_payload(result["before"], result["after"]))
+        except Exception as exc:
+            log.warning("Deploy receipt failed: %s", exc)
         await relay.close_all()
-        # Fire after the response has been sent so the client sees the log.
         threading.Timer(1.5, _restart_process).start()
     return JSONResponse(result)
 
