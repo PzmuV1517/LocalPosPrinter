@@ -135,7 +135,7 @@ class Auth:
         ):
             return HmacResult(False, device_id, "signature mismatch")
 
-        # Signature is valid *before* we spend the nonce, so a valid caller can't be locked
+        # Signature is checked before the nonce is spent, so a valid caller can't be locked
         # out by someone pre-burning nonces; only a replay of this exact signed request fails.
         if not self.db.use_nonce(nonce, ttl=self.skew * 2):
             return HmacResult(False, device_id, "nonce replay")

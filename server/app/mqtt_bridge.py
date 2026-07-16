@@ -104,7 +104,7 @@ class MqttBridge:
             self._client = MQTTClient(config={"auto_reconnect": False})
             await self._client.connect(uri)
             await self._client.subscribe([(f"{prefix}print", 1), (f"{prefix}alert", 1)])
-            # Publish HA availability + auto-discovery to our own broker (retained), so an HA that
+            # Publish HA availability + auto-discovery to the broker (retained), so an HA that
             # connects here sees a "Watchtower Printer" device without any manual YAML.
             await self._client.publish(f"{prefix}status", b"online", qos=1, retain=True)
             if self.db.get_config("mqtt_discovery", "1") == "1":

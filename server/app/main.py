@@ -339,7 +339,7 @@ mkdir -p "$BIN" "$LIB" "$CONF_DIR"
 echo "Downloading scout.py from $BASE ..."
 curl -fsSL "$BASE/scout.py" -o "$LIB/scout.py"
 
-# Config is written once so re-running the installer keeps the secret you put in.
+# Config is written once so re-running the installer keeps the existing secret.
 if [ ! -f "$CONF" ]; then
   printf 'WATCHTOWER_URL=%s\nSCOUT_DEVICE_ID=%s\nSCOUT_SECRET=\n' "$BASE" "$DEVICE_ID" > "$CONF"
   chmod 600 "$CONF"
@@ -1318,7 +1318,7 @@ def _status_payload(by: str) -> dict:
 
 # Dedup so a flapping condition doesn't spam email/print repeatedly.
 _recent_alerts: dict[str, float] = {}
-# Devices currently flagged silent by the dead-man's-switch (so we alert once, not every check).
+# Devices flagged silent by the dead-man's-switch (alert once, not every check).
 _silent_devices: set[str] = set()
 
 

@@ -33,7 +33,7 @@ def _load_or_create_key(data_dir: str) -> bytes:
     """Return a urlsafe-base64 Fernet key: env override, else a persisted random key."""
     env = os.environ.get("SERVER_SECRET_KEY")
     if env:
-        # Accept either a ready Fernet key or any string we can normalise into one.
+        # Accept a ready Fernet key or any string, normalised into one.
         try:
             Fernet(env.encode())
             return env.encode()

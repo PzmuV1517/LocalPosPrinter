@@ -188,7 +188,7 @@ class MqttClientBridge:
             except Exception:
                 pass
             self._task = None
-        # Only touch the socket if we were actually connected, and never let a hung publish/
+        # Only touch the socket if it was connected, and never let a hung publish/
         # disconnect block a reload (that would leave the old loop running on the stale config).
         if self._client is not None:
             try:
