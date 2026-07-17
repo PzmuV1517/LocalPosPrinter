@@ -82,7 +82,7 @@ export async function runSetup(payload: Record<string, unknown>): Promise<string
 export async function serverUp(): Promise<boolean> {
   try { return (await fetch('/healthz', { cache: 'no-store' })).ok } catch { return false }
 }
-export const getStatus = () => post<{ device_connected: boolean; pending_jobs: number; confer_mode?: boolean; confer_presence?: ConferPresence[] }>('/status', {})
+export const getStatus = () => post<{ device_connected: boolean; printer_ready?: boolean; printer_state?: string; pending_jobs: number; confer_mode?: boolean; confer_presence?: ConferPresence[] }>('/status', {})
 
 // ---- Confer (admin view) ----
 export interface ConferFolder { id: number; name: string; parent_id: number | null }

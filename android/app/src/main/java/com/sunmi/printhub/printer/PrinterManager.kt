@@ -73,6 +73,31 @@ class PrinterManager(private val appContext: Context) {
         null
     }
 
+    data class State(
+        val code: Int, val ready: Boolean, val paperOut: Boolean,
+        val coverOpen: Boolean, val text: String,
+    )
+
+    /**
+     * Live readiness from Sunmi updatePrinterState(). Only the known fault codes flag not-ready,
+     * so a firmware that returns something unexpected still reads as ready (no false alarms).
+     */
+    fun state(): State {
+        service ?: return State(-2, false, false, false, "unbound")
+        val code = try {
+            service?.updatePrinterState() ?: -1
+        } catch (t: Throwable) {
+            Log.w(TAG, "updatePrinterState failed", t); -1
+        }
+        val text = when (code) {
+            3 -> "comms error"; 4 -> "out of paper"; 5 -> "overheating"
+            6 -> "cover open"; 7 -> "cutter error"; 9 -> "no black mark"
+            505 -> "no printer"; else -> "ready"
+        }
+        val faults = intArrayOf(3, 4, 5, 6, 7, 9, 505)
+        return State(code, code !in faults, code == 4, code == 6, text)
+    }
+
     sealed class PrintResult {
         object Success : PrintResult()
         data class Failure(val message: String) : PrintResult()

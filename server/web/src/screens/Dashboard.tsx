@@ -15,18 +15,30 @@ const TABS: Tab[] = ['logs', 'print', 'confer', 'devices', 'passwords', 'history
 export function Dashboard({ onLogout, onUnauthorized }: { onLogout: () => void; onUnauthorized: () => void }) {
   const [tab, setTab] = useState<Tab>('logs')
   const [connected, setConnected] = useState(false)
+  const [ready, setReady] = useState(true)
+  const [pstate, setPstate] = useState('')
   const [conferMode, setConferMode] = useState(false)
 
   useInterval(() => {
-    api.getStatus().then((s) => { setConnected(s.device_connected); setConferMode(!!s.confer_mode) }).catch(() => {})
+    api.getStatus().then((s) => {
+      setConnected(s.device_connected); setReady(s.printer_ready ?? true)
+      setPstate(s.printer_state ?? ''); setConferMode(!!s.confer_mode)
+    }).catch(() => {})
   }, 4000)
+
+  // white = ready to print, grey = connected but can't print, red = offline.
+  const dot = conferMode || (connected && ready) ? 'on' : connected ? 'busy' : 'off'
+  const label = conferMode ? 'in Confer mode'
+    : !connected ? 'printer offline'
+    : ready ? 'printer online'
+    : `printer not ready: ${pstate}`
 
   return (
     <div>
       <header>
         <div className="brand">WATCHTOWER</div>
         <div className="right">
-          <span><span className={`dot ${connected || conferMode ? 'on' : ''}`} />{conferMode ? 'in Confer mode' : connected ? 'printer online' : 'printer offline'}</span>
+          <span><span className={`dot ${dot}`} />{label}</span>
           <button className="ghost mini" onClick={onLogout}>Sign out</button>
         </div>
       </header>

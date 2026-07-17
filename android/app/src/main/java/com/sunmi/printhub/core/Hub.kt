@@ -75,10 +75,15 @@ object Hub {
         val net = internet ?: return
         try {
             val bm = appContext.getSystemService(Context.BATTERY_SERVICE) as android.os.BatteryManager
+            val st = printer.state()
             val frame = org.json.JSONObject()
                 .put("type", "printer_status")
                 .put("battery", bm.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY))
                 .put("charging", bm.isCharging)
+                .put("ready", st.ready)
+                .put("paper_out", st.paperOut)
+                .put("cover_open", st.coverOpen)
+                .put("printer_state", st.text)
             printer.serialNo()?.let { frame.put("serial", it) }
             net.sendFrame(frame.toString())
         } catch (_: Throwable) {

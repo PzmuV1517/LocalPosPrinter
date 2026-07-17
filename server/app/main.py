@@ -296,9 +296,15 @@ async def status(request: Request) -> JSONResponse:
     _, body = await _read(request)
     if not _authed_admin(request, body):
         return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    connected = relay.is_connected()
+    pmeta = _printer_meta()
     return JSONResponse(
         {
-            "device_connected": relay.is_connected(),
+            "device_connected": connected,
+            # Readiness from the printer's last status frame (paper, cover, faults). Only meaningful
+            # while connected; unknown (older app not reporting) counts as ready, no false alarm.
+            "printer_ready": bool(pmeta.get("ready", True)) if connected else False,
+            "printer_state": (str(pmeta.get("printer_state") or "ready") if connected else "offline"),
             "pending_jobs": sum(len(q) for q in relay.pending.values()),
             "print_width": print_width(),
             # A printer that switched to chat isn't offline, surface it as "in Confer mode".
@@ -1331,6 +1337,8 @@ def _build_status_report(by: str) -> str:
           _kv("queue", f"{sum(len(q) for q in relay.pending.values())} jobs"),
           _kv("width", f"{print_width()}px")]
     pm = (printer_dev or {}).get("meta") or {}
+    if relay.is_connected():
+        L.append(_kv("state", "ready" if pm.get("ready", True) else f"NOT READY ({pm.get('printer_state', '?')})"))
     if pm.get("battery") is not None:
         L.append(_kv("battery", f"{pm['battery']}% {'charging' if pm.get('charging') else 'on battery'}"))
     if pm.get("serial"):
@@ -1385,6 +1393,13 @@ def _fetch_weather() -> dict:
         data = json.loads(r.read().decode())
     _weather_cache.update(ts=time.time(), data=data)
     return data
+
+
+def _printer_meta() -> dict:
+    for d in db.list_devices():
+        if not d["revoked"] and (d.get("meta") or {}).get("role") == "printer":
+            return d.get("meta") or {}
+    return {}
 
 
 def _server_brief_lines() -> "list[str]":
@@ -1821,6 +1836,14 @@ async def messages(ws: WebSocket) -> None:
                     pm["battery"] = frame.get("battery")
                 if "charging" in frame:
                     pm["charging"] = bool(frame.get("charging"))
+                if "ready" in frame:
+                    pm["ready"] = bool(frame.get("ready"))
+                if "paper_out" in frame:
+                    pm["paper_out"] = bool(frame.get("paper_out"))
+                if "cover_open" in frame:
+                    pm["cover_open"] = bool(frame.get("cover_open"))
+                if frame.get("printer_state"):
+                    pm["printer_state"] = str(frame.get("printer_state"))
                 if frame.get("serial"):
                     pm["serial"] = str(frame.get("serial"))
                 db.touch_device(auth_id, meta=pm)
