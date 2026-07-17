@@ -939,8 +939,23 @@ async def config_restart(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "restarting": True})
 
 
+_UPDATE_LOG = os.path.join(DATA_DIR, "update.log")
+
+
+def _write_update_log(result: dict) -> None:
+    # Persisted so the git pull output survives the restart and the dashboard can show it.
+    head = (f"# {time.strftime('%Y-%m-%d %H:%M:%S')}  {result.get('before')} -> "
+            f"{result.get('after')}  changed={result.get('changed')} ok={result.get('ok')}\n\n")
+    try:
+        with open(_UPDATE_LOG, "w") as f:
+            f.write(head + (result.get("log") or ""))
+    except Exception as exc:
+        log.warning("Write update log failed: %s", exc)
+
+
 async def _update_and_restart() -> None:
     result = await asyncio.to_thread(_run_update)
+    _write_update_log(result)
     log.info("Self-update: changed=%s %s->%s ok=%s",
              result.get("changed"), result.get("before"), result.get("after"), result.get("ok"))
     if not result.get("restarting"):
@@ -962,6 +977,18 @@ async def config_update(request: Request) -> JSONResponse:
     # the reverse proxy timeout (502). The client polls /healthz and reloads when the server is back.
     asyncio.create_task(_update_and_restart())
     return JSONResponse({"ok": True, "restarting": True, "started": True})
+
+
+@app.post("/config/update-log")
+async def config_update_log(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    try:
+        with open(_UPDATE_LOG) as f:
+            return JSONResponse({"log": f.read()})
+    except FileNotFoundError:
+        return JSONResponse({"log": ""})
 
 
 # ---------------------------------------------------------------------------
@@ -1349,7 +1376,8 @@ def _fetch_weather() -> dict:
     if _weather_cache["data"] and time.time() - _weather_cache["ts"] < 600:
         return _weather_cache["data"]
     url = ("https://api.open-meteo.com/v1/forecast?" + _BUCHAREST +
-           "&current=temperature_2m,weather_code&hourly=temperature_2m"
+           "&current=temperature_2m,apparent_temperature,weather_code"
+           "&hourly=temperature_2m,precipitation_probability"
            "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,"
            "precipitation_probability_max,uv_index_max,wind_speed_10m_max"
            "&timezone=Europe%2FBucharest&forecast_days=4")

@@ -13,6 +13,7 @@ server; it is not claimed against the app's own on-device Canvas renderer.
 from __future__ import annotations
 
 import base64
+import calendar
 import io
 import math
 import os
@@ -833,6 +834,73 @@ def _temp_ascii(times: List[str], temps: List[float], rows: int = 9) -> List[str
     return lines
 
 
+def _rain_window(times: List[str], probs: List[float], threshold: int = 50) -> str:
+    # ponytail: naive local time; the brief is for a single locale, tz skew not worth handling.
+    hour0 = datetime.now().replace(minute=0, second=0, microsecond=0)
+    hits = []
+    for t, p in zip(times, probs):
+        try:
+            dt = datetime.fromisoformat(t)
+        except Exception:
+            continue
+        if dt >= hour0 and p is not None and p >= threshold:
+            hits.append(dt)
+    if not hits:
+        return ""
+    start = end = hits[0]
+    for dt in hits[1:]:
+        if (dt - end).total_seconds() <= 3600:
+            end = dt
+        else:
+            break
+    if start == end:
+        return f"umbrella: rain ~{start.strftime('%H')}h"
+    return f"umbrella: rain {start.strftime('%H')}-{end.strftime('%H')}h"
+
+
+def _dress_hint(feels: Optional[float]) -> str:
+    if feels is None:
+        return ""
+    for lo, hint in ((30, "light clothes, hydrate"), (24, "t-shirt weather"),
+                     (17, "light layers"), (10, "a jacket"), (3, "coat and layers")):
+        if feels >= lo:
+            return hint
+    return "heavy coat, gloves"
+
+
+def _dress_lines(cur: dict, hourly: dict) -> List[str]:
+    feels = cur.get("apparent_temperature")
+    out = []
+    if feels is not None:
+        out.append(f"> feels like {round(feels)}C")
+    hint = _dress_hint(feels)
+    if hint:
+        out.append(f"> {hint}")
+    rain = _rain_window(hourly.get("time") or [], hourly.get("precipitation_probability") or [])
+    out.append("> " + (rain or "no rain expected"))
+    return out
+
+
+_QUOTES = [
+    "Small steps still move you forward.", "Make today count.",
+    "Progress over perfection.", "Do one hard thing first.",
+    "Consistency beats intensity.", "You have time for what matters.",
+    "Ship something today.", "Calm mind, steady hands.",
+    "Finish what you start.", "One day at a time.",
+    "Momentum is built, not found.", "Start now, refine later.",
+]
+
+
+def _year_progress(cols: int = 24):
+    now = datetime.now()
+    total = 366 if calendar.isleap(now.year) else 365
+    doy = now.timetuple().tm_yday
+    pct = doy / total
+    filled = round(pct * cols)
+    bar = "[" + "#" * filled + "." * (cols - filled) + "]"
+    return now.year, total - doy, round(pct * 100), bar, _QUOTES[(doy - 1) % len(_QUOTES)]
+
+
 def _daylight(sunrise: str, sunset: str) -> str:
     try:
         secs = (datetime.fromisoformat(sunset) - datetime.fromisoformat(sunrise)).total_seconds()
@@ -906,6 +974,19 @@ def render_brief(weather: dict, server_lines: List[str], greeting: str,
         parts.append(_text_block("OUTLOOK", 28, True, "left", w))
         for line in outlook:
             parts.append(_text_block(line, 24, False, "left", w))
+
+    if daily:
+        parts.append(_rule_img(w))
+        parts.append(_text_block("DRESS", 28, True, "left", w))
+        for line in _dress_lines(cur, hourly):
+            parts.append(_text_block(line, 24, False, "left", w))
+
+    year, left, pct, bar, quote = _year_progress()
+    parts.append(_rule_img(w))
+    parts.append(_text_block(f"{left} DAYS LEFT IN {year}", 26, True, "center", w))
+    parts.append(_art_block([bar], w))
+    parts.append(_text_block(f"{pct}% complete", 22, False, "center", w))
+    parts.append(_text_block(quote, 22, False, "center", w))
 
     parts.append(_rule_img(w))
     parts.append(_text_block("SYSTEMS", 28, True, "left", w))

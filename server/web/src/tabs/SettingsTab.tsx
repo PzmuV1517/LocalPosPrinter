@@ -133,12 +133,22 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     else setMqttCMsg({ ok: false, text: 'Failed.' })
   }
 
-  async function waitForRestart() {
+  // Poll until the server is back. On an update, pull the persisted git log and show it in
+  // place, staying on this tab (no reload) so the output sticks until the page is refreshed.
+  async function waitForRestart(showLog: boolean) {
     for (let i = 0; i < 60; i++) {
       await new Promise((r) => setTimeout(r, 1000))
-      if (await api.serverUp()) { setUpdateLog((l) => (l ?? '') + '\nServer back up, reloading…'); setTimeout(() => location.reload(), 900); return }
+      if (await api.serverUp()) {
+        if (showLog) {
+          const d = await api.updateLog().catch(() => null)
+          setUpdateLog((d?.log?.trim() || 'Server back up.') + '\n\n(refresh the page to load any dashboard changes)')
+        } else setUpdateLog((l) => (l ?? '') + '\nServer back up.')
+        setUpdating(false)
+        return
+      }
     }
     setUpdateLog((l) => (l ?? '') + '\nStill waiting, reload manually once it’s back.')
+    setUpdating(false)
   }
   async function doUpdate() {
     if (!confirm('Pull the latest code from main and restart the server now?')) return
@@ -146,16 +156,15 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     try {
       const d = await guard(api.updateServer())
       if (!d) { setUpdating(false); return }
-      setUpdateLog('Update started. Pulling latest and restarting, this page reconnects on its own.')
-      waitForRestart()
-    } catch { setUpdateLog('Server restarting, reconnecting…'); waitForRestart() }
-    setUpdating(false)
+      setUpdateLog('Update started. Pulling latest and restarting, waiting for the server to come back…')
+    } catch { setUpdateLog('Server restarting, reconnecting…') }
+    waitForRestart(true)
   }
   async function doRestart() {
     if (!confirm('Restart the server now (no code pull)?')) return
     setUpdating(true); setUpdateLog('Restarting…')
     try { await guard(api.restartServer()) } catch { /* connection may drop */ }
-    waitForRestart(); setUpdating(false)
+    waitForRestart(false)
   }
 
   const N = (patch: Partial<NotifySettings>) => setNotify({ ...notify, ...patch })
