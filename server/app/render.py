@@ -733,15 +733,17 @@ def _rule_img(w: int) -> Image.Image:
     return _text_block("/" * 24, 20, True, "center", w)
 
 
-def _sun_arc(w: int, sunrise: str, sunset: str) -> Image.Image:
-    h = 112
-    img = _blank(w, h)
-    d = ImageDraw.Draw(img)
-    left, right = 44, w - 44
-    base = h - 24
-    ry = 40
-    d.arc([left, base - 2 * ry, right, base], 180, 360, fill=BLACK, width=2)
-    d.line([left - 8, base, right + 8, base], fill=BLACK, width=1)
+# ASCII art, monospace and bold, so it prints thick and legible on thermal paper.
+ART_SIZE = 22
+
+
+def _art_block(lines: List[str], w: int) -> Image.Image:
+    # Pad to equal width so center alignment moves the block as a whole, not per line.
+    width = max((len(s) for s in lines), default=0)
+    return _text_block("\n".join(s.ljust(width) for s in lines), ART_SIZE, True, "center", w)
+
+
+def _sun_ascii(sunrise: str, sunset: str, cols: int = 26, rows: int = 5) -> List[str]:
     frac = 0.5
     try:
         sr, ss = datetime.fromisoformat(sunrise), datetime.fromisoformat(sunset)
@@ -749,50 +751,42 @@ def _sun_arc(w: int, sunrise: str, sunset: str) -> Image.Image:
         frac = min(1.0, max(0.0, (now - sr).total_seconds() / max(1.0, (ss - sr).total_seconds())))
     except Exception:
         pass
-    ang = math.pi * (1 - frac)
-    cx, rx = (left + right) / 2, (right - left) / 2
-    sx = cx - rx * math.cos(ang)
-    sy = base - ry * math.sin(ang)
-    r = 9
-    d.ellipse([sx - r, sy - r, sx + r, sy + r], fill=BLACK)
-    for a in range(0, 360, 45):  # sun rays
-        rr = a * math.pi / 180
-        d.line([sx + (r + 2) * math.cos(rr), sy + (r + 2) * math.sin(rr),
-                sx + (r + 6) * math.cos(rr), sy + (r + 6) * math.sin(rr)], fill=BLACK, width=1)
-    f = _font(18, False)
-    d.text((left - 24, base + 4), (sunrise or "")[11:16], font=f, fill=BLACK)
-    d.text((right - 22, base + 4), (sunset or "")[11:16], font=f, fill=BLACK)
-    return img
+    grid = [[" "] * cols for _ in range(rows)]
+
+    def arc_row(x):
+        return round((rows - 1) * (1 - math.sin(math.pi * x / (cols - 1))))
+
+    for x in range(cols):
+        grid[arc_row(x)][x] = "."
+    sx = round((cols - 1) * frac)
+    grid[arc_row(sx)][sx] = "O"
+    lines = ["".join(r) for r in grid]
+    lines.append("=" * cols)
+    srt, sst = (sunrise or "")[11:16], (sunset or "")[11:16]
+    lines.append(srt + " " * max(1, cols - len(srt) - len(sst)) + sst)
+    return lines
 
 
-def _temp_graph(w: int, times: List[str], temps: List[float]) -> Image.Image:
-    temps = [t for t in temps if t is not None]
-    if len(temps) < 2:
-        return _blank(w, 1)
-    h = 140
-    img = _blank(w, h)
-    d = ImageDraw.Draw(img)
-    left, right, top, bot = 36, w - 12, 14, h - 26
-    tmin, tmax = min(temps), max(temps)
+def _temp_ascii(times: List[str], temps: List[float], rows: int = 7, step: int = 2) -> List[str]:
+    pts = [(times[i][11:13], temps[i]) for i in range(0, len(temps), step)
+           if i < len(times) and temps[i] is not None]
+    if len(pts) < 2:
+        return []
+    vals = [t for _, t in pts]
+    tmin, tmax = min(vals), max(vals)
     span = max(1.0, tmax - tmin)
-    n = len(temps)
-
-    def X(i):
-        return left + (right - left) * i / (n - 1)
-
-    def Y(t):
-        return bot - (bot - top) * (t - tmin) / span
-
-    d.line([left, top, left, bot], fill=BLACK, width=1)
-    d.line([left, bot, right, bot], fill=BLACK, width=1)
-    d.line([(X(i), Y(t)) for i, t in enumerate(temps)], fill=BLACK, width=2)
-    f = _font(16, False)
-    d.text((2, top - 3), f"{round(tmax)}C", font=f, fill=BLACK)
-    d.text((2, bot - 9), f"{round(tmin)}C", font=f, fill=BLACK)
-    for i in range(0, n, 6):
-        hh = times[i][11:13] if i < len(times) else ""
-        d.text((X(i) - 6, bot + 4), hh, font=f, fill=BLACK)
-    return img
+    grid = [[" "] * len(pts) for _ in range(rows)]
+    for c, (_, t) in enumerate(pts):
+        lvl = round((rows - 1) * (t - tmin) / span)
+        for r in range(rows - 1 - lvl, rows):
+            grid[r][c] = "#"
+    lines = []
+    for r in range(rows):
+        axis = f"{round(tmax):>3}C" if r == 0 else (f"{round(tmin):>3}C" if r == rows - 1 else "    ")
+        lines.append(axis + "|" + "".join(grid[r]))
+    lines.append("    +" + "-" * len(pts))
+    lines.append(f"    {pts[0][0]}h" + " " * max(1, len(pts) - 5) + f"{pts[-1][0]}h")
+    return lines
 
 
 def render_brief(weather: dict, server_lines: List[str], greeting: str,
@@ -817,8 +811,10 @@ def render_brief(weather: dict, server_lines: List[str], greeting: str,
         curt, hi, lo = cur.get("temperature_2m"), d0("temperature_2m_max"), d0("temperature_2m_min")
         parts.append(_text_block(desc, TEXT_SIZE, False, "center", w))
         parts.append(_text_block(f"now {curt}C   hi {hi}C   lo {lo}C", 24, False, "center", w))
-        parts.append(_sun_arc(w, d0("sunrise", ""), d0("sunset", "")))
-        parts.append(_temp_graph(w, hourly.get("time") or [], hourly.get("temperature_2m") or []))
+        parts.append(_art_block(_sun_ascii(d0("sunrise", ""), d0("sunset", "")), w))
+        temp_art = _temp_ascii(hourly.get("time") or [], hourly.get("temperature_2m") or [])
+        if temp_art:
+            parts.append(_art_block(temp_art, w))
         extra = []
         if d0("precipitation_probability_max") is not None:
             extra.append(f"rain {d0('precipitation_probability_max')}%")
