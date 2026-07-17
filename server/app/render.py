@@ -25,6 +25,8 @@ from typing import List, Optional
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
 
+from .quotes import QUOTES
+
 # ---- layout constants (kept aligned with the Android renderer) ----
 DEFAULT_WIDTH = int(os.environ.get("PRINT_WIDTH", "384"))
 PAD = 12
@@ -881,16 +883,6 @@ def _dress_lines(cur: dict, hourly: dict) -> List[str]:
     return out
 
 
-_QUOTES = [
-    "Small steps still move you forward.", "Make today count.",
-    "Progress over perfection.", "Do one hard thing first.",
-    "Consistency beats intensity.", "You have time for what matters.",
-    "Ship something today.", "Calm mind, steady hands.",
-    "Finish what you start.", "One day at a time.",
-    "Momentum is built, not found.", "Start now, refine later.",
-]
-
-
 def _year_progress(cols: int = 24):
     now = datetime.now()
     total = 366 if calendar.isleap(now.year) else 365
@@ -898,7 +890,7 @@ def _year_progress(cols: int = 24):
     pct = doy / total
     filled = round(pct * cols)
     bar = "[" + "#" * filled + "." * (cols - filled) + "]"
-    return now.year, total - doy, round(pct * 100), bar, _QUOTES[(doy - 1) % len(_QUOTES)]
+    return now.year, total - doy, round(pct * 100), bar, QUOTES[(doy - 1) % len(QUOTES)]
 
 
 def _daylight(sunrise: str, sunset: str) -> str:
