@@ -900,17 +900,17 @@ def render_brief(weather: dict, server_lines: List[str], greeting: str,
     else:
         parts.append(_text_block("weather unavailable", 24, False, "center", w))
 
-    parts.append(_rule_img(w))
-    parts.append(_text_block("SYSTEMS", 28, True, "left", w))
-    for line in server_lines:
-        parts.append(_text_block(line, 24, False, "left", w))
-
     outlook = _outlook_lines(daily)
     if outlook:
         parts.append(_rule_img(w))
         parts.append(_text_block("OUTLOOK", 28, True, "left", w))
         for line in outlook:
             parts.append(_text_block(line, 24, False, "left", w))
+
+    parts.append(_rule_img(w))
+    parts.append(_text_block("SYSTEMS", 28, True, "left", w))
+    for line in server_lines:
+        parts.append(_text_block(line, 24, False, "left", w))
 
     parts.append(_rule_img(w))
     parts.append(_text_block("HAVE A NICE DAY", 32, True, "center", w))
