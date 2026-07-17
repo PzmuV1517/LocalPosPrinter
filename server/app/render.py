@@ -19,7 +19,7 @@ import os
 import random
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
@@ -733,8 +733,8 @@ def _rule_img(w: int) -> Image.Image:
     return _text_block("/" * 24, 20, True, "center", w)
 
 
-# ASCII art, monospace and bold, so it prints thick and legible on thermal paper.
-ART_SIZE = 22
+# ASCII art, monospace and bold, small so it prints thick with a lot of columns of detail.
+ART_SIZE = 16
 
 
 def _art_block(lines: List[str], w: int) -> Image.Image:
@@ -743,7 +743,8 @@ def _art_block(lines: List[str], w: int) -> Image.Image:
     return _text_block("\n".join(s.ljust(width) for s in lines), ART_SIZE, True, "center", w)
 
 
-def _sun_ascii(sunrise: str, sunset: str, cols: int = 26, rows: int = 5) -> List[str]:
+def _sun_ascii(sunrise: str, sunset: str, cols: int = 34, rows: int = 8) -> List[str]:
+    sr = ss = None
     frac = 0.5
     try:
         sr, ss = datetime.fromisoformat(sunrise), datetime.fromisoformat(sunset)
@@ -751,42 +752,111 @@ def _sun_ascii(sunrise: str, sunset: str, cols: int = 26, rows: int = 5) -> List
         frac = min(1.0, max(0.0, (now - sr).total_seconds() / max(1.0, (ss - sr).total_seconds())))
     except Exception:
         pass
-    grid = [[" "] * cols for _ in range(rows)]
 
     def arc_row(x):
         return round((rows - 1) * (1 - math.sin(math.pi * x / (cols - 1))))
 
+    grid = [[" "] * cols for _ in range(rows)]
     for x in range(cols):
         grid[arc_row(x)][x] = "."
     sx = round((cols - 1) * frac)
     grid[arc_row(sx)][sx] = "O"
     lines = ["".join(r) for r in grid]
-    lines.append("=" * cols)
-    srt, sst = (sunrise or "")[11:16], (sunset or "")[11:16]
-    lines.append(srt + " " * max(1, cols - len(srt) - len(sst)) + sst)
+
+    horizon, labels = ["="] * cols, [" "] * cols
+    if sr and ss:
+        span = max(1.0, (ss - sr).total_seconds())
+        t = (sr + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        while t <= ss:  # hour ticks every 2h across the daylight span
+            c = round((t - sr).total_seconds() / span * (cols - 1))
+            horizon[c] = "|"
+            start = min(max(0, c - 1), cols - 2)  # keep the 2-digit label on the strip
+            for j, ch in enumerate(t.strftime("%H")):
+                labels[start + j] = ch
+            t += timedelta(hours=2)
+    lines.append("".join(horizon))
+    lines.append("".join(labels))
     return lines
 
 
-def _temp_ascii(times: List[str], temps: List[float], rows: int = 7, step: int = 2) -> List[str]:
-    pts = [(times[i][11:13], temps[i]) for i in range(0, len(temps), step)
-           if i < len(times) and temps[i] is not None]
-    if len(pts) < 2:
+def _line_rows(vals: List[float], rows: int) -> List[List[str]]:
+    # asciichart-style smooth line drawn with rounded box characters.
+    mn, mx = min(vals), max(vals)
+    span = max(1e-9, mx - mn)
+    grid = [[" "] * len(vals) for _ in range(rows)]
+
+    def sc(v):
+        return int(round((v - mn) / span * (rows - 1)))
+
+    def put(r, c, ch):
+        grid[rows - 1 - r][c] = ch
+
+    for i in range(len(vals) - 1):
+        y0, y1 = sc(vals[i]), sc(vals[i + 1])
+        if y0 == y1:
+            put(y0, i, "─")
+        else:
+            put(y1, i, "╰" if y0 > y1 else "╭")
+            put(y0, i, "╮" if y0 > y1 else "╯")
+            for y in range(min(y0, y1) + 1, max(y0, y1)):
+                put(y, i, "│")
+    return grid
+
+
+def _temp_ascii(times: List[str], temps: List[float], rows: int = 9) -> List[str]:
+    series = [(times[i][11:13], temps[i]) for i in range(len(temps))
+              if i < len(times) and temps[i] is not None]
+    if len(series) < 2:
         return []
-    vals = [t for _, t in pts]
-    tmin, tmax = min(vals), max(vals)
-    span = max(1.0, tmax - tmin)
-    grid = [[" "] * len(pts) for _ in range(rows)]
-    for c, (_, t) in enumerate(pts):
-        lvl = round((rows - 1) * (t - tmin) / span)
-        for r in range(rows - 1 - lvl, rows):
-            grid[r][c] = "#"
+    vals = [t for _, t in series]
+    grid = _line_rows(vals, rows)
+    mn, mx = min(vals), max(vals)
     lines = []
     for r in range(rows):
-        axis = f"{round(tmax):>3}C" if r == 0 else (f"{round(tmin):>3}C" if r == rows - 1 else "    ")
-        lines.append(axis + "|" + "".join(grid[r]))
-    lines.append("    +" + "-" * len(pts))
-    lines.append(f"    {pts[0][0]}h" + " " * max(1, len(pts) - 5) + f"{pts[-1][0]}h")
+        if r == 0:
+            ax = f"{round(mx):>3}C"
+        elif r == rows - 1:
+            ax = f"{round(mn):>3}C"
+        elif r == rows // 2:
+            ax = f"{round((mx + mn) / 2):>3}C"
+        else:
+            ax = "    "
+        lines.append(ax + "|" + "".join(grid[r]))
+    n = len(series)
+    xl = [" "] * n
+    for i in range(0, n, 6):
+        for j, ch in enumerate(series[i][0]):
+            if i + j < n:
+                xl[i + j] = ch
+    lines.append("    +" + "-" * n)
+    lines.append("     " + "".join(xl))
     return lines
+
+
+def _daylight(sunrise: str, sunset: str) -> str:
+    try:
+        secs = (datetime.fromisoformat(sunset) - datetime.fromisoformat(sunrise)).total_seconds()
+        return f"daylight {int(secs // 3600)}h {int(secs % 3600 // 60):02d}m"
+    except Exception:
+        return ""
+
+
+def _outlook_lines(daily: dict) -> List[str]:
+    codes = daily.get("weather_code") or []
+    his = daily.get("temperature_2m_max") or []
+    los = daily.get("temperature_2m_min") or []
+    days = daily.get("time") or []
+    out = []
+    for i in range(1, min(4, len(days))):
+        try:
+            name = datetime.fromisoformat(days[i]).strftime("%a")
+        except Exception:
+            name = str(days[i])
+        hi = round(his[i]) if i < len(his) else "?"
+        lo = round(los[i]) if i < len(los) else "?"
+        desc = _WMO.get(codes[i] if i < len(codes) else -1, "")
+        out.append(f"> {name}  {hi:>2}/{lo:<2}C  {desc}")
+    return out
 
 
 def render_brief(weather: dict, server_lines: List[str], greeting: str,
@@ -812,7 +882,10 @@ def render_brief(weather: dict, server_lines: List[str], greeting: str,
         parts.append(_text_block(desc, TEXT_SIZE, False, "center", w))
         parts.append(_text_block(f"now {curt}C   hi {hi}C   lo {lo}C", 24, False, "center", w))
         parts.append(_art_block(_sun_ascii(d0("sunrise", ""), d0("sunset", "")), w))
-        temp_art = _temp_ascii(hourly.get("time") or [], hourly.get("temperature_2m") or [])
+        day = _daylight(d0("sunrise", ""), d0("sunset", ""))
+        if day:
+            parts.append(_text_block(day, 22, False, "center", w))
+        temp_art = _temp_ascii((hourly.get("time") or [])[:24], (hourly.get("temperature_2m") or [])[:24])
         if temp_art:
             parts.append(_art_block(temp_art, w))
         extra = []
@@ -831,6 +904,14 @@ def render_brief(weather: dict, server_lines: List[str], greeting: str,
     parts.append(_text_block("SYSTEMS", 28, True, "left", w))
     for line in server_lines:
         parts.append(_text_block(line, 24, False, "left", w))
+
+    outlook = _outlook_lines(daily)
+    if outlook:
+        parts.append(_rule_img(w))
+        parts.append(_text_block("OUTLOOK", 28, True, "left", w))
+        for line in outlook:
+            parts.append(_text_block(line, 24, False, "left", w))
+
     parts.append(_rule_img(w))
     parts.append(_text_block("HAVE A NICE DAY", 32, True, "center", w))
     parts.append(_text_block("//// END TRANSMISSION ////", 18, False, "center", w))

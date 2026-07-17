@@ -1352,7 +1352,7 @@ def _fetch_weather() -> dict:
            "&current=temperature_2m,weather_code&hourly=temperature_2m"
            "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,"
            "precipitation_probability_max,uv_index_max,wind_speed_10m_max"
-           "&timezone=Europe%2FBucharest&forecast_days=1")
+           "&timezone=Europe%2FBucharest&forecast_days=4")
     with urllib.request.urlopen(url, timeout=10) as r:
         data = json.loads(r.read().decode())
     _weather_cache.update(ts=time.time(), data=data)
