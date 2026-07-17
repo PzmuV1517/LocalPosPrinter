@@ -62,8 +62,8 @@ header .brand { font-size:18px; letter-spacing:4px; }
 header .right { display:flex; gap:14px; align-items:center; font-size:12px; color:var(--muted); }
 .dot { width:8px; height:8px; border-radius:0; display:inline-block; margin-right:6px; background:var(--muted); }
 .dot.on { background:var(--accent); }
-.dot.busy { background:#8a8a8a; }
-.dot.off { background:var(--hot); }
+.dot.busy { background:var(--hot); }
+.dot.off { background:#8a8a8a; }
 nav.tabs { display:flex; gap:2px; border-bottom:1px solid var(--border); padding:0 10px; overflow-x:auto; }
 nav.tabs button { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); border-radius:0; padding:12px 14px; font-size:12px; letter-spacing:1px; text-transform:uppercase; }
 nav.tabs button.active { color:var(--text); border-bottom-color:var(--accent); }

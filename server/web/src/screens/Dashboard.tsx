@@ -26,7 +26,7 @@ export function Dashboard({ onLogout, onUnauthorized }: { onLogout: () => void; 
     }).catch(() => {})
   }, 4000)
 
-  // white = ready to print, grey = connected but can't print, red = offline.
+  // white = ready to print, red = connected but can't print, grey = offline.
   const dot = conferMode || (connected && ready) ? 'on' : connected ? 'busy' : 'off'
   const label = conferMode ? 'in Confer mode'
     : !connected ? 'printer offline'
