@@ -25,7 +25,7 @@ export const replayCrt = () => window.dispatchEvent(new Event('crt-replay'))
 
 const OPEN_MS = 570  // blank + line + bloom-open, matches the CSS animation timings
 const FADE = 5000    // fisheye + scanline fade after it opens
-const WARP = 55      // peak fisheye displacement, px
+const WARP = 78      // peak fisheye displacement, px
 
 // Barrel/fisheye displacement map. Built at the screen's aspect ratio and measured radially in
 // real screen space (normalised by the shorter half-axis), so the bulge is a true circle, not a
