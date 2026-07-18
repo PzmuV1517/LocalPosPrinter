@@ -109,7 +109,10 @@ _NO_CACHE = {"Cache-Control": "no-store, max-age=0"}
 # styles); scripts are the bundled /assets file. Blocks framing, external connects, plugins.
 _CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; "
-        "frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self'")
+        # base-uri 'self' (not 'none'): html-to-image sets a same-origin base URI to resolve
+        # stylesheet URLs when snapshotting the page for the login intro. 'self' still blocks
+        # cross-origin base hijacking.
+        "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'")
 
 
 @app.middleware("http")

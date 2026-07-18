@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { hud } from './Hud'
 
 let lastRenderer = ''
 
@@ -36,7 +37,6 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
   const canPlay = useMemo(() => accelerated(), [])
   const [trigger, setTrigger] = useState(active ? 1 : 0)
   const [running, setRunning] = useState(active && canPlay)
-  const [status, setStatus] = useState(!canPlay ? `off (${lastRenderer})` : active ? 'init' : 'idle')
   const wrap = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -47,7 +47,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
 
   useEffect(() => {
     if (trigger === 0) return
-    if (!canPlay) { setStatus(`off (${lastRenderer})`); return }
+    if (!canPlay) { hud(`boot: no GPU accel (${lastRenderer})`, 6000); return }
     setRunning(true)
     let cancelled = false
     let app: any = null
@@ -61,17 +61,14 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
       try {
         const node = wrap.current
         if (!node) throw new Error('no node')
-        setStatus('loading libs')
         const [{ Application, Sprite, Texture }, { CRTFilter }, { toCanvas }] = await Promise.all([
           import('pixi.js'), import('pixi-filters'), import('html-to-image'),
         ])
-        setStatus('snapshotting')
         const snap = await toCanvas(node, {
           width: window.innerWidth, height: window.innerHeight,
-          pixelRatio: Math.min(2, window.devicePixelRatio || 1), cacheBust: true,
+          pixelRatio: Math.min(2, window.devicePixelRatio || 1),
         })
         if (cancelled) return
-        setStatus(`snapshot ${snap.width}x${snap.height}`)
 
         app = new Application()
         await app.init({ background: 0x000000, resizeTo: window, antialias: true })
@@ -81,7 +78,6 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
           position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh', zIndex: '9999',
         })
         document.body.appendChild(canvas)
-        setStatus('playing')
 
         const sprite = new Sprite(Texture.from(snap))
         sprite.alpha = 0
@@ -115,11 +111,11 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
             crt.lineContrast = CONTRAST * k
             crt.vignettingAlpha = k
             crt.noise = NOISE * k
-            if (k <= 0 && !cancelled) { cancelled = true; cleanup(); setRunning(false); setStatus('done') }
+            if (k <= 0 && !cancelled) { cancelled = true; cleanup(); setRunning(false) }
           }
         })
       } catch (err) {
-        setStatus('FAILED: ' + ((err as Error)?.message || String(err)))
+        hud('boot failed: ' + ((err as Error)?.message || String(err)), 8000)
         cleanup(); setRunning(false)
       }
     })()
@@ -131,10 +127,6 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
     <>
       <div ref={wrap} className="crt-wrap">{children}</div>
       {running && <div className="crt-blank" />}
-      <div style={{
-        position: 'fixed', left: 6, bottom: 6, zIndex: 100000, font: '11px monospace',
-        color: '#0f0', background: 'rgba(0,0,0,.7)', padding: '2px 6px', pointerEvents: 'none',
-      }}>crt: {status}</div>
     </>
   )
 }

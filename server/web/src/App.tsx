@@ -4,6 +4,7 @@ import { Setup } from './screens/Setup'
 import { Login } from './screens/Login'
 import { Dashboard } from './screens/Dashboard'
 import { CrtBoot } from './CrtBoot'
+import { Hud } from './Hud'
 
 type Screen = 'loading' | 'setup' | 'gate' | 'app'
 
@@ -32,12 +33,15 @@ export function App() {
   const onLogout = useCallback(async () => { await api.logout(); setScreen('gate') }, [])
   const onAuthed = useCallback((token: string) => { api.setToken(token); setReason(''); setFreshAuth(true); setScreen('app') }, [])
 
-  if (screen === 'loading') return null
-  if (screen === 'setup') return <Setup onAuthed={onAuthed} />
-  if (screen === 'gate') return <Login onAuthed={onAuthed} reason={reason} />
-  return (
-    <CrtBoot active={freshAuth}>
-      <Dashboard onLogout={onLogout} onUnauthorized={onUnauthorized} />
-    </CrtBoot>
-  )
+  const content =
+    screen === 'loading' ? null
+      : screen === 'setup' ? <Setup onAuthed={onAuthed} />
+        : screen === 'gate' ? <Login onAuthed={onAuthed} reason={reason} />
+          : (
+            <CrtBoot active={freshAuth}>
+              <Dashboard onLogout={onLogout} onUnauthorized={onUnauthorized} />
+            </CrtBoot>
+          )
+
+  return <>{content}<Hud /></>
 }
