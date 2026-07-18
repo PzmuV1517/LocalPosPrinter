@@ -23,6 +23,49 @@ function accelerated(): boolean {
 // Fire from anywhere (e.g. the Settings test button) to replay the intro.
 export const replayCrt = () => window.dispatchEvent(new Event('crt-replay'))
 
+// Fake kernel/BIOS boot log that scrolls past after the flash (desktop only).
+const BOOT_LINES = `WATCHTOWER BIOS v2.3.4   (c) PzmuV1517
+POST ....................... OK
+CPU: phosphor-core @ 15.7kHz  [1 tube]
+Memory test: 65536 lines ... OK
+Detecting scanline controller ... found
+Initializing electron gun ...... ready
+[    0.000000] Booting WATCHTOWER kernel
+[    0.001132] Calibrating deflection yoke
+[    0.004071] pid_max: default 32768
+[    0.006553] Mounting /dev/crt0
+[    0.009210] phosphor: P1 persistence 12ms
+[    0.013887] Loading printer daemon ...... ok
+[    0.018402] relay: opening socket
+[    0.021995] relay: link up
+[    0.026110] confer: encrypting channels
+[    0.031264] confer: 4 rooms ready
+[    0.037781] mqtt: bridge listening
+[    0.042013] scout: watchdog armed
+[    0.048662] weather: open-meteo handshake
+[    0.055120] brief: 366 quotes indexed
+[    0.061330] auth: scrypt ready
+[    0.067884] tls: HSTS enforced
+[    0.074001] net: HMAC identity verified
+[    0.081559] fs: journald forwarding online
+[    0.090114] input: touchscreen [absent]
+[    0.101772] display: 1 CRT, fisheye enabled
+[  ok  ] Started phosphor warm-up
+[  ok  ] Reached target Print Services
+[  ok  ] Reached target Confer
+[  ok  ] Reached target Multi-User System
+starting session for operator ...
+decrypting vault .......... ok
+loading dashboard modules
+  logs .......... ok
+  print ......... ok
+  devices ....... ok
+  passwords ..... ok
+  history ....... ok
+  settings ...... ok
+handshake complete.
+WATCHTOWER online.`
+
 const OPEN_MS = 570  // blank + line + bloom-open, matches the CSS animation timings
 const FADE = 5000    // fisheye + scanline fade after it opens
 const WARP = 78      // peak fisheye displacement, px
@@ -73,6 +116,8 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
   const [running, setRunning] = useState(active && canPlay)
   const map = useMemo(() => (canPlay ? warpMap() : ''), [canPlay, trigger])
   const disp = useRef<SVGFEDisplacementMapElement>(null)
+  // Boot log is desktop-only (skip phones).
+  const desktop = typeof window !== 'undefined' && window.matchMedia('(min-width: 820px)').matches
 
   useEffect(() => {
     const h = () => setTrigger((t) => t + 1)
@@ -120,6 +165,11 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
           <div className="crt-scan" />
           <div className="crt-flash" />
           <div className="crt-line" />
+          {desktop && (
+            <div className="crt-boot" aria-hidden="true">
+              <pre className="crt-boot-roll">{BOOT_LINES}</pre>
+            </div>
+          )}
         </>
       )}
     </>
