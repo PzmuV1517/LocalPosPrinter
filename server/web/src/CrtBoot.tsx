@@ -105,6 +105,30 @@ function warpMap(): string {
   return c.toDataURL()
 }
 
+// Real terminal: types BOOT_LINES out character by character, bottom-anchored so it scrolls up
+// like a console as it fills. Starts just as the reveal bars open.
+function BootLog() {
+  const [n, setN] = useState(0)
+  useEffect(() => {
+    let raf = 0
+    let startAt = 0
+    const DELAY = 560, MS_PER_CHAR = 3
+    const step = (t: number) => {
+      if (!startAt) startAt = t + DELAY
+      const chars = Math.max(0, Math.floor((t - startAt) / MS_PER_CHAR))
+      setN(Math.min(BOOT_LINES.length, chars))
+      if (chars < BOOT_LINES.length) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [])
+  return (
+    <div className="crt-boot" aria-hidden="true">
+      <pre>{BOOT_LINES.slice(0, n)}<span className="crt-cursor">&#9611;</span></pre>
+    </div>
+  )
+}
+
 /**
  * One-shot CRT power-on over its children, run entirely on the LIVE DOM so the page stays
  * navigable throughout: a GPU-composited SVG barrel filter for the fisheye, plus click-through
@@ -165,11 +189,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
           <div className="crt-scan" />
           <div className="crt-flash" />
           <div className="crt-line" />
-          {desktop && (
-            <div className="crt-boot" aria-hidden="true">
-              <pre className="crt-boot-roll">{BOOT_LINES}</pre>
-            </div>
-          )}
+          {desktop && <BootLog />}
         </>
       )}
     </>
