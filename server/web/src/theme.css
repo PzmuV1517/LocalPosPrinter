@@ -132,9 +132,24 @@ nav.tabs button::before, nav.tabs button::after { content:none; }
 .modal pre { white-space:pre-wrap; word-break:break-word; font-size:12px; background:var(--bg); border:1px solid var(--border); padding:10px; }
 tr.clickable:hover td { background:var(--surface2); cursor:pointer; }
 
-/* CRT power-on intro, plays once after a fresh login (see CrtBoot.tsx). The Pixi canvas overlays
-   the screen during the effect; this black layer covers the gap while it loads + snapshots. */
-.crt-blank { position: fixed; inset: 0; background: #000; z-index: 9998; pointer-events: none; }
+/* CRT power-on intro (see CrtBoot.tsx). Runs on the live DOM: the fisheye is an SVG filter on
+   .crt-wrap; the reveal/flash/scanlines are click-through overlays so the page stays usable. */
+.crt-svg { position: absolute; width: 0; height: 0; overflow: hidden; }
+.crt-bar, .crt-scan, .crt-flash, .crt-line { position: fixed; pointer-events: none; }
+.crt-bar { left: 0; right: 0; height: 50%; background: #000; z-index: 9997; }
+.crt-bar.top { top: 0; transform-origin: top; animation: crtBar 570ms ease-out both; }
+.crt-bar.bot { bottom: 0; transform-origin: bottom; animation: crtBar 570ms ease-out both; }
+.crt-scan {
+  inset: 0; z-index: 9998; animation: crtScan 5s linear 570ms both;
+  background: repeating-linear-gradient(to bottom,
+    rgba(0,0,0,.5) 0, rgba(0,0,0,.5) 1px, transparent 1px, transparent 3px);
+}
+.crt-line { left: 0; right: 0; top: 50%; height: 3px; margin-top: -1.5px; background: #fff; z-index: 9999; animation: crtLine 570ms ease-out both; }
+.crt-flash { inset: 0; background: #fff; opacity: 0; z-index: 9999; animation: crtFlash 570ms ease-out both; }
+@keyframes crtBar { 0%, 47% { transform: scaleY(1) } 100% { transform: scaleY(0) } }
+@keyframes crtLine { 0%, 21% { opacity: 0 } 47% { opacity: 1 } 100% { opacity: 0 } }
+@keyframes crtFlash { 0%, 47% { opacity: 0 } 70% { opacity: .55 } 100% { opacity: 0 } }
+@keyframes crtScan { 0% { opacity: .45 } 100% { opacity: 0 } }
 
 /* HUD: transient bottom-left status readout (see Hud.tsx). Hidden when idle. */
 .hud {
