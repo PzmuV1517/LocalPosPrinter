@@ -110,14 +110,15 @@ function warpMap(): string {
 function BootLog() {
   const [n, setN] = useState(0)
   useEffect(() => {
-    let raf = 0
-    let startAt = 0
-    const DELAY = 560, MS_PER_CHAR = 3
+    // Pace so the last character lands just as the fisheye finishes fading.
+    const START = 300, END = OPEN_MS + FADE - 120
+    const perChar = Math.max(0.4, (END - START) / BOOT_LINES.length)
+    let raf = 0, mount = 0
     const step = (t: number) => {
-      if (!startAt) startAt = t + DELAY
-      const chars = Math.max(0, Math.floor((t - startAt) / MS_PER_CHAR))
-      setN(Math.min(BOOT_LINES.length, chars))
-      if (chars < BOOT_LINES.length) raf = requestAnimationFrame(step)
+      if (!mount) mount = t
+      const e = t - mount
+      setN(Math.max(0, Math.min(BOOT_LINES.length, Math.floor((e - START) / perChar))))
+      if (e < END) raf = requestAnimationFrame(step)
     }
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
