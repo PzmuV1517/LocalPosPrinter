@@ -25,11 +25,11 @@ export const replayCrt = () => window.dispatchEvent(new Event('crt-replay'))
 
 const OPEN_MS = 570  // blank + line + bloom-open, matches the CSS animation timings
 const FADE = 5000    // fisheye + scanline fade after it opens
-const WARP = 42      // peak fisheye displacement, px
+const WARP = 95      // peak fisheye displacement, px
 
 // Barrel-distortion displacement map: R/G encode an inward radial offset that grows quadratically
 // toward the edges, so the middle bulges toward the viewer like a CRT tube.
-function warpMap(size = 96, k = 0.28): string {
+function warpMap(size = 96, k = 0.25): string {
   const c = document.createElement('canvas')
   c.width = c.height = size
   const g = c.getContext('2d')!
@@ -106,6 +106,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
           <div className="crt-bar top" />
           <div className="crt-bar bot" />
           <div className="crt-scan" />
+          <div className="crt-glow" />
           <div className="crt-flash" />
           <div className="crt-line" />
         </>
