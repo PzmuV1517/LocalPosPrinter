@@ -53,15 +53,17 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
     if (!canPlay) { console.warn('[boot] no GPU accel', lastRenderer); hud(`boot: no GPU accel (${lastRenderer})`, 6000); return }
     setRunning(true)
     const sx0 = window.scrollX, sy0 = window.scrollY
-    const prevOverflow = document.body.style.overflow
     let cancelled = false
     let app: any = null
     let canvas: HTMLCanvasElement | null = null
-    const cleanup = () => {
+    let safety = 0
+    const finish = () => {
+      if (cancelled) return
+      cancelled = true
+      clearTimeout(safety)
       try { app?.destroy(true, { children: true, texture: true }) } catch { /* already gone */ }
       canvas?.remove()
-      document.body.style.overflow = prevOverflow
-      window.scrollTo(sx0, sy0)
+      setRunning(false)
     }
 
     void (async () => {
@@ -83,18 +85,20 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
           style: { transform: `translate(${-sx0}px, ${-sy0}px)`, transformOrigin: 'top left' },
         })
         if (cancelled) return
-        window.scrollTo(sx0, sy0)              // html-to-image can move scroll, put it back
-        document.body.style.overflow = 'hidden' // freeze scroll while the overlay is up
+        window.scrollTo(sx0, sy0)  // html-to-image can nudge scroll during capture, put it back
 
         app = new Application()
         await app.init({ background: 0x000000, resizeTo: window, antialias: true })
-        if (cancelled) { cleanup(); return }
+        if (cancelled) { finish(); return }
         canvas = app.canvas as HTMLCanvasElement
+        // pointer-events none: the live page behind stays fully clickable during the intro.
         Object.assign(canvas.style, {
           position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
           zIndex: '9999', pointerEvents: 'none',
         })
         document.body.appendChild(canvas)
+        // Hard stop: whatever happens, tear the overlay down so the page can never get stuck.
+        safety = window.setTimeout(finish, BLANK + LINE + OPEN + FADE + 1500)
 
         const sprite = new Sprite(Texture.from(snap))
         const crt = new CRTFilter({
@@ -112,43 +116,49 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
 
         const t0 = performance.now()
         app.ticker.add(() => {
-          const w = app.screen.width, h = app.screen.height
-          sprite.width = w; sprite.height = h
-          flash.width = w; flash.height = h
-          line.width = w; line.height = 3; line.x = 0; line.y = h / 2 - 1.5
-          crt.time += 0.5
-          const e = performance.now() - t0
+          try {
+            const w = app.screen.width, h = app.screen.height
+            sprite.width = w; sprite.height = h
+            flash.width = w; flash.height = h
+            crt.time += 0.5
+            const e = performance.now() - t0
 
-          if (e < BLANK) {
-            mask.clear(); line.alpha = 0; flash.alpha = 0
-          } else if (e < BLANK + LINE) {
-            const p = (e - BLANK) / LINE
-            mask.clear().rect(0, h / 2 - 2, w, 4).fill(0xffffff)
-            line.alpha = p; flash.alpha = 0
-          } else if (e < BLANK + LINE + OPEN) {
-            const p = (e - BLANK - LINE) / OPEN
-            const band = Math.max(4, h * (1 - (1 - p) * (1 - p)))
-            mask.clear().rect(0, h / 2 - band / 2, w, band).fill(0xffffff)
-            line.alpha = 1 - p; flash.alpha = Math.sin(p * Math.PI) * 0.6
-          } else {
-            if (sprite.mask) { sprite.mask = null; mask.destroy(); line.destroy() }
-            flash.alpha = 0
-            const k = 1 - Math.min(1, (e - BLANK - LINE - OPEN) / FADE)
-            crt.curvature = CURVE * k
-            crt.lineContrast = CONTRAST * k
-            crt.vignettingAlpha = k
-            crt.noise = NOISE * k
-            if (k <= 0 && !cancelled) { cancelled = true; cleanup(); setRunning(false) }
+            if (e < BLANK) {
+              mask.clear(); line.alpha = 0; flash.alpha = 0
+            } else if (e < BLANK + LINE) {
+              const p = (e - BLANK) / LINE
+              line.width = w; line.height = 3; line.x = 0; line.y = h / 2 - 1.5; line.alpha = p
+              mask.clear().rect(0, h / 2 - 2, w, 4).fill(0xffffff)
+              flash.alpha = 0
+            } else if (e < BLANK + LINE + OPEN) {
+              const p = (e - BLANK - LINE) / OPEN
+              const band = Math.max(4, h * (1 - (1 - p) * (1 - p)))
+              line.width = w; line.height = 3; line.x = 0; line.y = h / 2 - 1.5; line.alpha = 1 - p
+              mask.clear().rect(0, h / 2 - band / 2, w, band).fill(0xffffff)
+              flash.alpha = Math.sin(p * Math.PI) * 0.6
+            } else {
+              if (sprite.mask) { sprite.mask = null; mask.visible = false; line.visible = false }
+              flash.alpha = 0
+              const k = 1 - Math.min(1, (e - BLANK - LINE - OPEN) / FADE)
+              crt.curvature = CURVE * k
+              crt.lineContrast = CONTRAST * k
+              crt.vignettingAlpha = k
+              crt.noise = NOISE * k
+              if (k <= 0) finish()
+            }
+          } catch (err) {
+            console.error('[boot] tick error', err)
+            finish()
           }
         })
       } catch (err) {
         console.error('[boot] intro failed', err)
         hud('boot failed: ' + ((err as Error)?.message || String(err)), 8000)
-        cleanup(); setRunning(false)
+        finish()
       }
     })()
 
-    return () => { cancelled = true; cleanup() }
+    return () => { finish() }
   }, [trigger, canPlay])
 
   return (

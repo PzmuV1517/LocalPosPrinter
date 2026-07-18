@@ -134,7 +134,7 @@ tr.clickable:hover td { background:var(--surface2); cursor:pointer; }
 
 /* CRT power-on intro, plays once after a fresh login (see CrtBoot.tsx). The Pixi canvas overlays
    the screen during the effect; this black layer covers the gap while it loads + snapshots. */
-.crt-blank { position: fixed; inset: 0; background: #000; z-index: 9998; }
+.crt-blank { position: fixed; inset: 0; background: #000; z-index: 9998; pointer-events: none; }
 
 /* HUD: transient bottom-left status readout (see Hud.tsx). Hidden when idle. */
 .hud {
