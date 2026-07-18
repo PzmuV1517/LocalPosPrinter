@@ -30,7 +30,7 @@ import urllib.request
 from collections import deque
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import crypto
@@ -114,6 +114,10 @@ _CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'
 
 @app.middleware("http")
 async def _security_headers(request: Request, call_next):
+    # Force HTTPS when a proxy tells us the client came in over plain HTTP, so credentials never
+    # travel unencrypted even on a first visit before HSTS is remembered. 308 keeps the method/body.
+    if request.headers.get("x-forwarded-proto") == "http":
+        return RedirectResponse(str(request.url.replace(scheme="https")), status_code=308)
     resp = await call_next(request)
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["X-Frame-Options"] = "DENY"
@@ -123,7 +127,7 @@ async def _security_headers(request: Request, call_next):
         "geolocation=(), microphone=(), camera=()")
     resp.headers["Content-Security-Policy"] = _CSP
     if request.headers.get("x-forwarded-proto") == "https":
-        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
     return resp
 
 
