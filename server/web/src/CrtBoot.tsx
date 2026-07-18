@@ -1,16 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-// Graphics-acceleration gate: reduced-motion, or a software / missing WebGL renderer, means no
-// intro (render flat and instant). Pixi needs real GPU to look right, so this is the switch.
+// Graphics-acceleration gate: a software / missing WebGL renderer means no intro (render flat and
+// instant). Pixi needs a real GPU to look right, so this is the switch.
 function accelerated(): boolean {
-  if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return false
   try {
     const gl = document.createElement('canvas').getContext('webgl') as WebGLRenderingContext | null
-    if (!gl) return false
+    if (!gl) { console.warn('[crt] no WebGL context'); return false }
     const dbg = gl.getExtension('WEBGL_debug_renderer_info')
     const r = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : ''
-    return !/swiftshader|llvmpipe|software|basic render|paravirtual/i.test(r)
-  } catch {
+    const ok = !/swiftshader|llvmpipe|software|basic render|paravirtual/i.test(r)
+    console.log('[crt] renderer=%o accelerated=%o', r, ok)
+    return ok
+  } catch (e) {
+    console.warn('[crt] webgl probe failed', e)
     return false
   }
 }
@@ -31,6 +33,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
   const enabled = useMemo(() => active && accelerated(), [active])
   const [running, setRunning] = useState(enabled)
   const wrap = useRef<HTMLDivElement>(null)
+  console.log('[crt] active=%o enabled=%o', active, enabled)
 
   useEffect(() => {
     if (!enabled) return
@@ -46,13 +49,16 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
       try {
         const node = wrap.current
         if (!node) throw new Error('no node')
+        console.log('[crt] loading libs')
         const [{ Application, Sprite, Texture }, { CRTFilter }, { toCanvas }] = await Promise.all([
           import('pixi.js'), import('pixi-filters'), import('html-to-image'),
         ])
+        console.log('[crt] snapshotting')
         const snap = await toCanvas(node, {
           width: window.innerWidth, height: window.innerHeight,
           pixelRatio: Math.min(2, window.devicePixelRatio || 1), cacheBust: true,
         })
+        console.log('[crt] snapshot ok %dx%d', snap.width, snap.height)
         if (cancelled) return
 
         app = new Application() as unknown as typeof app
@@ -61,6 +67,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
         canvas = app!.canvas
         Object.assign(canvas.style, { position: 'fixed', inset: '0', zIndex: '9999' })
         document.body.appendChild(canvas)
+        console.log('[crt] pixi canvas mounted, playing')
 
         const sprite = new Sprite(Texture.from(snap))
         sprite.alpha = 0
@@ -97,7 +104,8 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
             if (k <= 0 && !cancelled) { cancelled = true; cleanup(); setRunning(false) }
           }
         })
-      } catch {
+      } catch (err) {
+        console.error('[crt] intro failed, showing flat', err)
         cleanup(); setRunning(false)
       }
     })()
