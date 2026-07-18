@@ -91,6 +91,8 @@ class PrintHubService : Service() {
                     val sig = "${st.ready}|${st.paperOut}|${st.coverOpen}"
                     if (sig != lastStateSig) {
                         lastStateSig = sig
+                        Log.i(TAG, "printer state -> code=${st.code} ready=${st.ready} " +
+                            "paperOut=${st.paperOut} coverOpen=${st.coverOpen} (${st.text})")
                         Hub.sendPrinterStatus()
                     }
                 } catch (_: Throwable) {
