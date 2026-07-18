@@ -135,18 +135,7 @@ tr.clickable:hover td { background:var(--surface2); cursor:pointer; }
 /* CRT power-on intro (see CrtBoot.tsx). Runs on the live DOM: the fisheye is an SVG filter on
    .crt-wrap; the reveal/flash/scanlines are click-through overlays so the page stays usable. */
 .crt-svg { position: absolute; width: 0; height: 0; overflow: hidden; }
-.crt-bar, .crt-scan, .crt-flash, .crt-line, .crt-boot { position: fixed; pointer-events: none; }
-/* Bootloader log: a real terminal that types out, bottom-anchored so it scrolls up as it fills. */
-.crt-boot {
-  top: 0; bottom: 0; left: 0; width: max-content; max-width: 62vw; overflow: hidden;
-  padding: 18px 22px; z-index: 9996; display: flex; flex-direction: column; justify-content: flex-end;
-}
-.crt-boot pre {
-  margin: 0; white-space: pre; font: 12px/1.5 'Fira Code', monospace;
-  color: rgba(255,255,255,.34); text-shadow: 0 0 6px rgba(255,255,255,.22);
-}
-.crt-cursor { animation: crtCursor 1.05s steps(1) infinite; }
-@keyframes crtCursor { 50% { opacity: 0 } }
+.crt-bar, .crt-scan, .crt-flash, .crt-line { position: fixed; pointer-events: none; }
 /* Retracting black bars, with a bright glowing inner edge that sweeps outward like the beam. */
 .crt-bar { left: 0; right: 0; height: 50%; background: #000; z-index: 9997; }
 .crt-bar.top { top: 0; transform-origin: top; box-shadow: 0 6px 30px 8px rgba(255,255,255,.9); animation: crtBar 570ms ease-out both; }
