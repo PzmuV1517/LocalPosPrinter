@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api'
 import { fmtTime, useGuard, useInterval, SEV_ORDER } from '../common'
+import { replayCrt } from '../CrtBoot'
 import type { MqttSettings, MqttClientSettings, NotifySettings, Severity } from '../types'
 
 const SEVS = SEV_ORDER.slice(0, -1)
@@ -351,6 +352,11 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           <button className="ghost" style={{ flex: '0 0 auto' }} onClick={doRestart} disabled={updating}>Restart service</button>
         </div>
         {updateLog !== null && <pre className="updatelog mono">{updateLog}</pre>}
+
+        <h2>Appearance</h2>
+        <div className="row" style={{ flexWrap: 'wrap' }}>
+          <button className="ghost" style={{ flex: '0 0 auto' }} onClick={replayCrt}>Play boot animation</button>
+        </div>
       </div>
     </>
   )

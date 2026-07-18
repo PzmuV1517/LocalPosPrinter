@@ -1,21 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+let lastRenderer = ''
+
 // Graphics-acceleration gate: a software / missing WebGL renderer means no intro (render flat and
 // instant). Pixi needs a real GPU to look right, so this is the switch.
 function accelerated(): boolean {
   try {
     const gl = document.createElement('canvas').getContext('webgl') as WebGLRenderingContext | null
-    if (!gl) { console.warn('[crt] no WebGL context'); return false }
+    if (!gl) { lastRenderer = 'no-webgl'; return false }
     const dbg = gl.getExtension('WEBGL_debug_renderer_info')
-    const r = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : ''
-    const ok = !/swiftshader|llvmpipe|software|basic render|paravirtual/i.test(r)
-    console.log('[crt] renderer=%o accelerated=%o', r, ok)
-    return ok
-  } catch (e) {
-    console.warn('[crt] webgl probe failed', e)
+    lastRenderer = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : 'unknown'
+    return !/swiftshader|llvmpipe|software|basic render|paravirtual/i.test(lastRenderer)
+  } catch {
+    lastRenderer = 'probe-error'
     return false
   }
 }
+
+// Fire from anywhere (e.g. the Settings test button) to replay the intro.
+export const replayCrt = () => window.dispatchEvent(new Event('crt-replay'))
 
 const BLANK = 150   // ms of blank screen before the power-on flash
 const FLASH = 350   // ms flash + reveal
@@ -26,19 +29,28 @@ const CONTRAST = 0.4
 
 /**
  * One-shot CRT power-on over its children: snapshots the screen, runs it through Pixi's CRTFilter
- * (curvature/scanlines/vignette) with a flash, fades over 5s, then reveals the live DOM. The heavy
- * libs are loaded on demand, so only a fresh login pays for them. Any failure reveals the DOM flat.
+ * (curvature/scanlines/vignette) with a flash, fades over 5s, then reveals the live DOM. Heavy libs
+ * load on demand. Any failure reveals the DOM flat. Corner badge is a temporary debug readout.
  */
 export function CrtBoot({ active, children }: { active: boolean; children: React.ReactNode }) {
-  const enabled = useMemo(() => active && accelerated(), [active])
-  const [running, setRunning] = useState(enabled)
+  const canPlay = useMemo(() => accelerated(), [])
+  const [trigger, setTrigger] = useState(active ? 1 : 0)
+  const [running, setRunning] = useState(active && canPlay)
+  const [status, setStatus] = useState(!canPlay ? `off (${lastRenderer})` : active ? 'init' : 'idle')
   const wrap = useRef<HTMLDivElement>(null)
-  console.log('[crt] active=%o enabled=%o', active, enabled)
 
   useEffect(() => {
-    if (!enabled) return
+    const h = () => setTrigger((t) => t + 1)
+    window.addEventListener('crt-replay', h)
+    return () => window.removeEventListener('crt-replay', h)
+  }, [])
+
+  useEffect(() => {
+    if (trigger === 0) return
+    if (!canPlay) { setStatus(`off (${lastRenderer})`); return }
+    setRunning(true)
     let cancelled = false
-    let app: { destroy: (a: boolean, b: object) => void; canvas: HTMLCanvasElement; screen: { width: number; height: number }; stage: any; ticker: any; init: (o: object) => Promise<void> } | null = null
+    let app: any = null
     let canvas: HTMLCanvasElement | null = null
     const cleanup = () => {
       try { app?.destroy(true, { children: true, texture: true }) } catch { /* already gone */ }
@@ -49,25 +61,27 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
       try {
         const node = wrap.current
         if (!node) throw new Error('no node')
-        console.log('[crt] loading libs')
+        setStatus('loading libs')
         const [{ Application, Sprite, Texture }, { CRTFilter }, { toCanvas }] = await Promise.all([
           import('pixi.js'), import('pixi-filters'), import('html-to-image'),
         ])
-        console.log('[crt] snapshotting')
+        setStatus('snapshotting')
         const snap = await toCanvas(node, {
           width: window.innerWidth, height: window.innerHeight,
           pixelRatio: Math.min(2, window.devicePixelRatio || 1), cacheBust: true,
         })
-        console.log('[crt] snapshot ok %dx%d', snap.width, snap.height)
         if (cancelled) return
+        setStatus(`snapshot ${snap.width}x${snap.height}`)
 
-        app = new Application() as unknown as typeof app
-        await app!.init({ background: 0x000000, resizeTo: window, antialias: true })
+        app = new Application()
+        await app.init({ background: 0x000000, resizeTo: window, antialias: true })
         if (cancelled) { cleanup(); return }
-        canvas = app!.canvas
-        Object.assign(canvas.style, { position: 'fixed', inset: '0', zIndex: '9999' })
+        canvas = app.canvas as HTMLCanvasElement
+        Object.assign(canvas.style, {
+          position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh', zIndex: '9999',
+        })
         document.body.appendChild(canvas)
-        console.log('[crt] pixi canvas mounted, playing')
+        setStatus('playing')
 
         const sprite = new Sprite(Texture.from(snap))
         sprite.alpha = 0
@@ -78,12 +92,12 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
         sprite.filters = [crt]
         const flash = new Sprite(Texture.WHITE)
         flash.alpha = 0
-        app!.stage.addChild(sprite)
-        app!.stage.addChild(flash)
+        app.stage.addChild(sprite)
+        app.stage.addChild(flash)
 
         const t0 = performance.now()
-        app!.ticker.add(() => {
-          const w = app!.screen.width, h = app!.screen.height
+        app.ticker.add(() => {
+          const w = app.screen.width, h = app.screen.height
           sprite.width = w; sprite.height = h
           flash.width = w; flash.height = h
           crt.time += 0.5
@@ -101,23 +115,26 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
             crt.lineContrast = CONTRAST * k
             crt.vignettingAlpha = k
             crt.noise = NOISE * k
-            if (k <= 0 && !cancelled) { cancelled = true; cleanup(); setRunning(false) }
+            if (k <= 0 && !cancelled) { cancelled = true; cleanup(); setRunning(false); setStatus('done') }
           }
         })
       } catch (err) {
-        console.error('[crt] intro failed, showing flat', err)
+        setStatus('FAILED: ' + ((err as Error)?.message || String(err)))
         cleanup(); setRunning(false)
       }
     })()
 
     return () => { cancelled = true; cleanup() }
-  }, [enabled])
+  }, [trigger, canPlay])
 
-  if (!enabled) return <>{children}</>
   return (
     <>
       <div ref={wrap} className="crt-wrap">{children}</div>
       {running && <div className="crt-blank" />}
+      <div style={{
+        position: 'fixed', left: 6, bottom: 6, zIndex: 100000, font: '11px monospace',
+        color: '#0f0', background: 'rgba(0,0,0,.7)', padding: '2px 6px', pointerEvents: 'none',
+      }}>crt: {status}</div>
     </>
   )
 }
