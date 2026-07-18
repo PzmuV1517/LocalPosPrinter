@@ -23,9 +23,10 @@ function accelerated(): boolean {
 // Fire from anywhere (e.g. the Settings test button) to replay the intro.
 export const replayCrt = () => window.dispatchEvent(new Event('crt-replay'))
 
-const BLANK = 150   // ms of blank screen before the power-on flash
-const FLASH = 350   // ms flash + reveal
-const FADE = 5000   // ms fisheye + scanline fade after the flash
+const BLANK = 120   // ms black before the tube fires
+const LINE = 150    // ms the bright centre line builds
+const OPEN = 300    // ms the image blooms open from the line
+const FADE = 5000   // ms fisheye + scanline fade after it opens
 const CURVE = 9     // peak CRT curvature (fisheye)
 const NOISE = 0.18
 const CONTRAST = 0.4
@@ -51,12 +52,16 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
     if (trigger === 0) return
     if (!canPlay) { console.warn('[boot] no GPU accel', lastRenderer); hud(`boot: no GPU accel (${lastRenderer})`, 6000); return }
     setRunning(true)
+    const sx0 = window.scrollX, sy0 = window.scrollY
+    const prevOverflow = document.body.style.overflow
     let cancelled = false
     let app: any = null
     let canvas: HTMLCanvasElement | null = null
     const cleanup = () => {
       try { app?.destroy(true, { children: true, texture: true }) } catch { /* already gone */ }
       canvas?.remove()
+      document.body.style.overflow = prevOverflow
+      window.scrollTo(sx0, sy0)
     }
 
     void (async () => {
@@ -69,50 +74,66 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
         // Strict CSP blocks eval; this side-effect module swaps Pixi to no-eval shader generation.
         // Must load before the renderer is created.
         await import('pixi.js/unsafe-eval')
-        const { Application, Sprite, Texture } = pixi
+        const { Application, Sprite, Texture, Graphics } = pixi
+        // Snapshot the CURRENT viewport (shift the clone up by the scroll offset) so revealing the
+        // live DOM at the end lines up exactly, no jump.
         const snap = await toCanvas(node, {
           width: window.innerWidth, height: window.innerHeight,
           pixelRatio: Math.min(2, window.devicePixelRatio || 1),
+          style: { transform: `translate(${-sx0}px, ${-sy0}px)`, transformOrigin: 'top left' },
         })
         if (cancelled) return
+        window.scrollTo(sx0, sy0)              // html-to-image can move scroll, put it back
+        document.body.style.overflow = 'hidden' // freeze scroll while the overlay is up
 
         app = new Application()
         await app.init({ background: 0x000000, resizeTo: window, antialias: true })
         if (cancelled) { cleanup(); return }
         canvas = app.canvas as HTMLCanvasElement
         Object.assign(canvas.style, {
-          position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh', zIndex: '9999',
+          position: 'fixed', top: '0', left: '0', width: '100vw', height: '100vh',
+          zIndex: '9999', pointerEvents: 'none',
         })
         document.body.appendChild(canvas)
 
         const sprite = new Sprite(Texture.from(snap))
-        sprite.alpha = 0
         const crt = new CRTFilter({
           curvature: CURVE, lineWidth: 3, lineContrast: CONTRAST, noise: NOISE,
           noiseSize: 1, vignetting: 0.5, vignettingAlpha: 1, time: 0,
         })
         sprite.filters = [crt]
-        const flash = new Sprite(Texture.WHITE)
+        const mask = new Graphics()   // reveals the image, grows from the centre line
+        sprite.mask = mask
+        const line = new Sprite(Texture.WHITE)  // the bright power-on line
+        line.alpha = 0
+        const flash = new Sprite(Texture.WHITE) // bloom
         flash.alpha = 0
-        app.stage.addChild(sprite)
-        app.stage.addChild(flash)
+        app.stage.addChild(sprite, mask, line, flash)
 
         const t0 = performance.now()
         app.ticker.add(() => {
           const w = app.screen.width, h = app.screen.height
           sprite.width = w; sprite.height = h
           flash.width = w; flash.height = h
+          line.width = w; line.height = 3; line.x = 0; line.y = h / 2 - 1.5
           crt.time += 0.5
           const e = performance.now() - t0
+
           if (e < BLANK) {
-            sprite.alpha = 0; flash.alpha = 0
-          } else if (e < BLANK + FLASH) {
-            const p = (e - BLANK) / FLASH
-            sprite.alpha = Math.min(1, p * 2)
-            flash.alpha = Math.sin(p * Math.PI)
+            mask.clear(); line.alpha = 0; flash.alpha = 0
+          } else if (e < BLANK + LINE) {
+            const p = (e - BLANK) / LINE
+            mask.clear().rect(0, h / 2 - 2, w, 4).fill(0xffffff)
+            line.alpha = p; flash.alpha = 0
+          } else if (e < BLANK + LINE + OPEN) {
+            const p = (e - BLANK - LINE) / OPEN
+            const band = Math.max(4, h * (1 - (1 - p) * (1 - p)))
+            mask.clear().rect(0, h / 2 - band / 2, w, band).fill(0xffffff)
+            line.alpha = 1 - p; flash.alpha = Math.sin(p * Math.PI) * 0.6
           } else {
-            sprite.alpha = 1; flash.alpha = 0
-            const k = 1 - Math.min(1, (e - BLANK - FLASH) / FADE)
+            if (sprite.mask) { sprite.mask = null; mask.destroy(); line.destroy() }
+            flash.alpha = 0
+            const k = 1 - Math.min(1, (e - BLANK - LINE - OPEN) / FADE)
             crt.curvature = CURVE * k
             crt.lineContrast = CONTRAST * k
             crt.vignettingAlpha = k
