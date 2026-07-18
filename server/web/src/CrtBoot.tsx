@@ -63,9 +63,13 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
       try {
         const node = wrap.current
         if (!node) throw new Error('no node')
-        const [{ Application, Sprite, Texture }, { CRTFilter }, { toCanvas }] = await Promise.all([
+        const [pixi, { CRTFilter }, { toCanvas }] = await Promise.all([
           import('pixi.js'), import('pixi-filters'), import('html-to-image'),
         ])
+        // Strict CSP blocks eval; this side-effect module swaps Pixi to no-eval shader generation.
+        // Must load before the renderer is created.
+        await import('pixi.js/unsafe-eval')
+        const { Application, Sprite, Texture } = pixi
         const snap = await toCanvas(node, {
           width: window.innerWidth, height: window.innerHeight,
           pixelRatio: Math.min(2, window.devicePixelRatio || 1),
