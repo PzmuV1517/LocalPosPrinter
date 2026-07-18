@@ -25,26 +25,38 @@ export const replayCrt = () => window.dispatchEvent(new Event('crt-replay'))
 
 const OPEN_MS = 570  // blank + line + bloom-open, matches the CSS animation timings
 const FADE = 5000    // fisheye + scanline fade after it opens
-const WARP = 95      // peak fisheye displacement, px
+const WARP = 55      // peak fisheye displacement, px
 
-// Barrel-distortion displacement map: R/G encode an inward radial offset that grows quadratically
-// toward the edges, so the middle bulges toward the viewer like a CRT tube.
-function warpMap(size = 96, k = 0.25): string {
-  const c = document.createElement('canvas')
-  c.width = c.height = size
-  const g = c.getContext('2d')!
-  const im = g.createImageData(size, size)
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const nx = (x / (size - 1)) * 2 - 1
-      const ny = (y / (size - 1)) * 2 - 1
-      const r2 = nx * nx + ny * ny
-      const i = (y * size + x) * 4
-      im.data[i] = Math.max(0, Math.min(255, (0.5 - k * nx * r2) * 255))
-      im.data[i + 1] = Math.max(0, Math.min(255, (0.5 - k * ny * r2) * 255))
-      im.data[i + 2] = 128
-      im.data[i + 3] = 255
+// Barrel/fisheye displacement map. Built at the screen's aspect ratio and measured radially in
+// real screen space (normalised by the shorter half-axis), so the bulge is a true circle, not a
+// cylinder. R/G encode an inward offset growing with radius^2, so the centre magnifies like a lens.
+function warpMap(): string {
+  const aspect = (window.innerWidth || 1) / (window.innerHeight || 1)
+  const long = 160
+  const w = aspect >= 1 ? long : Math.max(2, Math.round(long * aspect))
+  const h = aspect >= 1 ? Math.max(2, Math.round(long / aspect)) : long
+  const half = Math.min(w, h) / 2 || 1
+  const cx = (w - 1) / 2, cy = (h - 1) / 2
+  const rx = new Float32Array(w * h), ry = new Float32Array(w * h)
+  let peak = 1e-6
+  for (let j = 0; j < h; j++) {
+    for (let i = 0; i < w; i++) {
+      const nx = (i - cx) / half, ny = (j - cy) / half
+      const rn = Math.hypot(nx, ny)
+      const ax = -nx * rn, ay = -ny * rn   // inward, magnitude grows with radius^2
+      const k = j * w + i
+      rx[k] = ax; ry[k] = ay
+      peak = Math.max(peak, Math.abs(ax), Math.abs(ay))
     }
+  }
+  const c = document.createElement('canvas'); c.width = w; c.height = h
+  const g = c.getContext('2d')!
+  const im = g.createImageData(w, h)
+  for (let k = 0; k < w * h; k++) {
+    im.data[k * 4] = Math.max(0, Math.min(255, (0.5 + 0.5 * rx[k] / peak) * 255))
+    im.data[k * 4 + 1] = Math.max(0, Math.min(255, (0.5 + 0.5 * ry[k] / peak) * 255))
+    im.data[k * 4 + 2] = 128
+    im.data[k * 4 + 3] = 255
   }
   g.putImageData(im, 0, 0)
   return c.toDataURL()
@@ -59,7 +71,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
   const canPlay = useMemo(() => accelerated(), [])
   const [trigger, setTrigger] = useState(active ? 1 : 0)
   const [running, setRunning] = useState(active && canPlay)
-  const map = useMemo(() => (canPlay ? warpMap() : ''), [canPlay])
+  const map = useMemo(() => (canPlay ? warpMap() : ''), [canPlay, trigger])
   const disp = useRef<SVGFEDisplacementMapElement>(null)
 
   useEffect(() => {
@@ -91,7 +103,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
     <>
       {running && (
         <svg className="crt-svg" aria-hidden="true">
-          <filter id="crtWarp" x="-15%" y="-15%" width="130%" height="130%">
+          <filter id="crtWarp" x="0" y="0" width="100%" height="100%">
             <feImage href={map} result="m" preserveAspectRatio="none" x="0" y="0" width="100%" height="100%" />
             <feDisplacementMap ref={disp} in="SourceGraphic" in2="m" scale={WARP}
               xChannelSelector="R" yChannelSelector="G" />
