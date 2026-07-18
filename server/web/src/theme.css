@@ -68,9 +68,10 @@ nav.tabs { display:flex; gap:2px; border-bottom:1px solid var(--border); padding
 nav.tabs button { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); border-radius:0; padding:12px 14px; font-size:12px; letter-spacing:1px; text-transform:uppercase; }
 nav.tabs button.active { color:var(--text); border-bottom-color:var(--accent); }
 main { padding:18px; max-width:1200px; margin:0 auto; }
-.card { background:var(--surface); border:1px solid var(--border); border-radius:0; padding:16px; margin-bottom:16px; }
+.card { background:var(--surface); border:1px solid var(--border); border-radius:0; padding:18px 18px 20px; margin-bottom:20px; }
 h2 { font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin:0 0 14px; }
-.row { display:flex; gap:10px; flex-wrap:wrap; }
+.row { display:flex; gap:12px; flex-wrap:wrap; }
+.row + .row { margin-top:4px; }
 .row > * { flex:1; min-width:120px; }
 .two { display:flex; gap:18px; flex-wrap:wrap; }
 .two > .col { flex:1; min-width:300px; }
@@ -134,7 +135,7 @@ tr.clickable:hover td { background:var(--surface2); cursor:pointer; }
 /* HUD: transient bottom-left status readout (see Hud.tsx). Hidden when idle. */
 .hud {
   position: fixed; left: 6px; bottom: 6px; z-index: 100000;
-  font: 11px 'Fira Code', monospace; color: var(--text);
-  background: rgba(0, 0, 0, .8); border: 1px solid var(--border);
+  font: 11px 'Fira Code', monospace; color: var(--muted);
+  background: rgba(0, 0, 0, .8);
   padding: 3px 7px; pointer-events: none; max-width: 60vw; white-space: pre-wrap;
 }

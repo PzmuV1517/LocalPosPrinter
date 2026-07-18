@@ -352,9 +352,14 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           <button className="ghost" style={{ flex: '0 0 auto' }} onClick={doRestart} disabled={updating}>Restart service</button>
         </div>
         {updateLog !== null && <pre className="updatelog mono">{updateLog}</pre>}
+      </div>
 
+      <div className="card">
         <h2>Appearance</h2>
-        <div className="row" style={{ flexWrap: 'wrap' }}>
+        <p className="muted" style={{ fontSize: 12, margin: '0 0 12px' }}>
+          Replay the CRT power-on animation. It also plays once after each successful login.
+        </p>
+        <div className="row">
           <button className="ghost" style={{ flex: '0 0 auto' }} onClick={replayCrt}>Play boot animation</button>
         </div>
       </div>
