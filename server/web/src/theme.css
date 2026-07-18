@@ -135,7 +135,7 @@ tr.clickable:hover td { background:var(--surface2); cursor:pointer; }
 /* CRT power-on intro (see CrtBoot.tsx). Runs on the live DOM: the fisheye is an SVG filter on
    .crt-wrap; the reveal/flash/scanlines are click-through overlays so the page stays usable. */
 .crt-svg { position: absolute; width: 0; height: 0; overflow: hidden; }
-.crt-bar, .crt-scan, .crt-flash, .crt-line, .crt-glow { position: fixed; pointer-events: none; }
+.crt-bar, .crt-scan, .crt-flash, .crt-line { position: fixed; pointer-events: none; }
 /* Retracting black bars, with a bright glowing inner edge that sweeps outward like the beam. */
 .crt-bar { left: 0; right: 0; height: 50%; background: #000; z-index: 9997; }
 .crt-bar.top { top: 0; transform-origin: top; box-shadow: 0 6px 30px 8px rgba(255,255,255,.9); animation: crtBar 570ms ease-out both; }
@@ -145,14 +145,11 @@ tr.clickable:hover td { background:var(--surface2); cursor:pointer; }
   background: repeating-linear-gradient(to bottom,
     rgba(0,0,0,.72) 0, rgba(0,0,0,.72) 2px, transparent 2px, transparent 4px);
 }
-/* White phosphor glow around the tube edges. */
-.crt-glow { inset: 0; z-index: 9998; box-shadow: inset 0 0 110px 26px rgba(255,255,255,.6); opacity: 0; animation: crtGlow 1700ms ease-out both; }
 .crt-line { left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; background: #fff; box-shadow: 0 0 22px 6px rgba(255,255,255,.95); z-index: 9999; animation: crtLine 570ms ease-out both; }
 .crt-flash { inset: 0; background: #fff; opacity: 0; z-index: 9999; animation: crtFlash 570ms ease-out both; }
 @keyframes crtBar { 0%, 42% { transform: scaleY(1) } 100% { transform: scaleY(0) } }
 @keyframes crtLine { 0%, 18% { opacity: 0 } 42% { opacity: 1 } 100% { opacity: 0 } }
 @keyframes crtFlash { 0%, 42% { opacity: 0 } 66% { opacity: .6 } 100% { opacity: 0 } }
-@keyframes crtGlow { 0%, 38% { opacity: 0 } 55% { opacity: 1 } 100% { opacity: 0 } }
 @keyframes crtScan { 0% { opacity: .75 } 100% { opacity: 0 } }
 
 /* HUD: transient bottom-left status readout (see Hud.tsx). Hidden when idle. */

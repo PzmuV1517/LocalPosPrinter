@@ -106,7 +106,6 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
           <div className="crt-bar top" />
           <div className="crt-bar bot" />
           <div className="crt-scan" />
-          <div className="crt-glow" />
           <div className="crt-flash" />
           <div className="crt-line" />
         </>
