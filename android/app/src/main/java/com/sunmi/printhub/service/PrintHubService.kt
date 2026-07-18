@@ -66,12 +66,37 @@ class PrintHubService : Service() {
     private var wakeLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
 
+    // Fast readiness watch: polls the printer every few seconds and pushes an update the moment
+    // paper/cover/fault state changes, so the dashboard reflects it in seconds instead of waiting
+    // for the 30s heartbeat. The held wake lock keeps this ticking with the screen off.
+    private var statusPoller: java.util.concurrent.ScheduledExecutorService? = null
+    @Volatile private var lastStateSig: String? = null
+
     override fun onCreate() {
         super.onCreate()
         Hub.init(this)
         Hub.printer.bind()
         acquireLocks()
         startForeground(NOTIF_ID, buildNotification())
+        startStatusPoller()
+    }
+
+    private fun startStatusPoller() {
+        if (statusPoller != null) return
+        statusPoller = java.util.concurrent.Executors.newSingleThreadScheduledExecutor().also {
+            it.scheduleWithFixedDelay({
+                try {
+                    if (!Hub.internetConnected) { lastStateSig = null; return@scheduleWithFixedDelay }
+                    val st = Hub.printer.state()
+                    val sig = "${st.ready}|${st.paperOut}|${st.coverOpen}"
+                    if (sig != lastStateSig) {
+                        lastStateSig = sig
+                        Hub.sendPrinterStatus()
+                    }
+                } catch (_: Throwable) {
+                }
+            }, 3, 3, java.util.concurrent.TimeUnit.SECONDS)
+        }
     }
 
     private fun acquireLocks() {
@@ -262,6 +287,8 @@ class PrintHubService : Service() {
 
     override fun onDestroy() {
         cancelHeartbeat()
+        statusPoller?.shutdownNow()
+        statusPoller = null
         stopHttp()
         stopMqtt()
         stopInternet()

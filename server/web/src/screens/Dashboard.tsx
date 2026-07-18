@@ -24,7 +24,7 @@ export function Dashboard({ onLogout, onUnauthorized }: { onLogout: () => void; 
       setConnected(s.device_connected); setReady(s.printer_ready ?? true)
       setPstate(s.printer_state ?? ''); setConferMode(!!s.confer_mode)
     }).catch(() => {})
-  }, 4000)
+  }, 2000)
 
   // white = ready to print, red = connected but can't print, grey = offline.
   const dot = conferMode || (connected && ready) ? 'on' : connected ? 'busy' : 'off'
