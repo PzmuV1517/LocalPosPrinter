@@ -171,7 +171,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
   const N = (patch: Partial<NotifySettings>) => setNotify({ ...notify, ...patch })
 
   return (
-    <>
+    <div className="settings-grid">
       <div className="card">
         <h2>Configuration</h2>
         <div className="row">
@@ -363,6 +363,6 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           <button className="ghost" style={{ flex: '0 0 auto' }} onClick={replayCrt}>Play boot animation</button>
         </div>
       </div>
-    </>
+    </div>
   )
 }

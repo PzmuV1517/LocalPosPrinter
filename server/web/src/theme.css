@@ -72,6 +72,10 @@ main { padding:18px; max-width:1200px; margin:0 auto; }
 h2 { font-size:12px; letter-spacing:1.5px; text-transform:uppercase; color:var(--muted); margin:0 0 14px; }
 .row { display:flex; gap:12px; flex-wrap:wrap; }
 .row + .row { margin-top:4px; }
+
+/* Settings: flow cards into columns so wide screens pack them side by side, less scrolling. */
+.settings-grid { column-width:340px; column-gap:20px; }
+.settings-grid > .card { break-inside:avoid; }
 .row > * { flex:1; min-width:120px; }
 .two { display:flex; gap:18px; flex-wrap:wrap; }
 .two > .col { flex:1; min-width:300px; }

@@ -11,7 +11,9 @@ function accelerated(): boolean {
     if (!gl) { lastRenderer = 'no-webgl'; return false }
     const dbg = gl.getExtension('WEBGL_debug_renderer_info')
     lastRenderer = dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : 'unknown'
-    return !/swiftshader|llvmpipe|software|basic render|paravirtual/i.test(lastRenderer)
+    const ok = !/swiftshader|llvmpipe|software|basic render|paravirtual/i.test(lastRenderer)
+    console.log('[boot] renderer=%o accelerated=%o', lastRenderer, ok)
+    return ok
   } catch {
     lastRenderer = 'probe-error'
     return false
@@ -47,7 +49,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
 
   useEffect(() => {
     if (trigger === 0) return
-    if (!canPlay) { hud(`boot: no GPU accel (${lastRenderer})`, 6000); return }
+    if (!canPlay) { console.warn('[boot] no GPU accel', lastRenderer); hud(`boot: no GPU accel (${lastRenderer})`, 6000); return }
     setRunning(true)
     let cancelled = false
     let app: any = null
@@ -115,6 +117,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
           }
         })
       } catch (err) {
+        console.error('[boot] intro failed', err)
         hud('boot failed: ' + ((err as Error)?.message || String(err)), 8000)
         cleanup(); setRunning(false)
       }
