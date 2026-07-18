@@ -103,7 +103,7 @@ export function CrtBoot({ active, children }: { active: boolean; children: React
     <>
       {running && (
         <svg className="crt-svg" aria-hidden="true">
-          <filter id="crtWarp" x="0" y="0" width="100%" height="100%">
+          <filter id="crtWarp" x="0" y="0" width="100%" height="100%" colorInterpolationFilters="sRGB">
             <feImage href={map} result="m" preserveAspectRatio="none" x="0" y="0" width="100%" height="100%" />
             <feDisplacementMap ref={disp} in="SourceGraphic" in2="m" scale={WARP}
               xChannelSelector="R" yChannelSelector="G" />
