@@ -1390,6 +1390,7 @@ def _fetch_weather() -> dict:
     url = ("https://api.open-meteo.com/v1/forecast?" + _BUCHAREST +
            "&current=temperature_2m,apparent_temperature,weather_code"
            "&hourly=temperature_2m,precipitation_probability"
+           "&minutely_15=temperature_2m"
            "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,"
            "precipitation_probability_max,uv_index_max,wind_speed_10m_max"
            "&timezone=Europe%2FBucharest&forecast_days=4")

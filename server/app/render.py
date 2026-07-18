@@ -783,58 +783,41 @@ def _sun_ascii(sunrise: str, sunset: str, cols: int = 34, rows: int = 8) -> List
     return lines
 
 
-def _line_rows(vals: List[float], rows: int) -> List[List[str]]:
-    # asciichart-style smooth line drawn with rounded box characters.
-    mn, mx = min(vals), max(vals)
-    span = max(1e-9, mx - mn)
-    grid = [[" "] * len(vals) for _ in range(rows)]
+def _temp_graph(times: List[str], temps: List[float], w: int = DEFAULT_WIDTH) -> Image.Image:
+    # Thick full-width pixel line over the day's temps (15-min data when available), so the curve
+    # reads clearly and shows real day-to-day shape rather than a coarse ASCII quantisation.
+    pts = [(times[i], temps[i]) for i in range(min(len(times), len(temps))) if temps[i] is not None]
+    if len(pts) < 2:
+        return _blank(w, 1)
+    vals = [v for _, v in pts]
+    tmin, tmax = min(vals), max(vals)
+    span = max(1.0, tmax - tmin)
+    n = len(pts)
+    h = 156
+    img = _blank(w, h)
+    d = ImageDraw.Draw(img)
+    left, right, top, bot = 46, w - 12, 16, h - 30
 
-    def sc(v):
-        return int(round((v - mn) / span * (rows - 1)))
+    def X(i):
+        return left + (right - left) * i / (n - 1)
 
-    def put(r, c, ch):
-        grid[rows - 1 - r][c] = ch
+    def Y(v):
+        return bot - (bot - top) * (v - tmin) / span
 
-    for i in range(len(vals) - 1):
-        y0, y1 = sc(vals[i]), sc(vals[i + 1])
-        if y0 == y1:
-            put(y0, i, "─")
-        else:
-            put(y1, i, "╰" if y0 > y1 else "╭")
-            put(y0, i, "╮" if y0 > y1 else "╯")
-            for y in range(min(y0, y1) + 1, max(y0, y1)):
-                put(y, i, "│")
-    return grid
-
-
-def _temp_ascii(times: List[str], temps: List[float], rows: int = 9) -> List[str]:
-    series = [(times[i][11:13], temps[i]) for i in range(len(temps))
-              if i < len(times) and temps[i] is not None]
-    if len(series) < 2:
-        return []
-    vals = [t for _, t in series]
-    grid = _line_rows(vals, rows)
-    mn, mx = min(vals), max(vals)
-    lines = []
-    for r in range(rows):
-        if r == 0:
-            ax = f"{round(mx):>3}C"
-        elif r == rows - 1:
-            ax = f"{round(mn):>3}C"
-        elif r == rows // 2:
-            ax = f"{round((mx + mn) / 2):>3}C"
-        else:
-            ax = "    "
-        lines.append(ax + "|" + "".join(grid[r]))
-    n = len(series)
-    xl = [" "] * n
-    for i in range(0, n, 6):
-        for j, ch in enumerate(series[i][0]):
-            if i + j < n:
-                xl[i + j] = ch
-    lines.append("    +" + "-" * n)
-    lines.append("     " + "".join(xl))
-    return lines
+    d.line([(left, top), (left, bot)], fill=BLACK, width=2)
+    d.line([(left, bot), (right, bot)], fill=BLACK, width=2)
+    d.line([(X(i), Y(v)) for i, (_, v) in enumerate(pts)], fill=BLACK, width=3, joint="curve")
+    fy = _font(20, True)
+    d.text((3, top - 6), f"{round(tmax)}C", font=fy, fill=BLACK)
+    d.text((3, (top + bot) // 2 - 12), f"{round((tmax + tmin) / 2)}C", font=fy, fill=BLACK)
+    d.text((3, bot - 16), f"{round(tmin)}C", font=fy, fill=BLACK)
+    fx = _font(18, True)
+    for i, (t, _) in enumerate(pts):
+        if t[14:16] == "00" and t[11:13] in ("00", "06", "12", "18"):
+            x = X(i)
+            d.line([(x, bot), (x, bot + 5)], fill=BLACK, width=2)
+            d.text((x - 11, bot + 7), t[11:13], font=fx, fill=BLACK)
+    return img
 
 
 def _rain_window(times: List[str], probs: List[float], threshold: int = 50) -> str:
@@ -946,9 +929,12 @@ def render_brief(weather: dict, server_lines: List[str], greeting: str,
         day = _daylight(d0("sunrise", ""), d0("sunset", ""))
         if day:
             parts.append(_text_block(day, 22, False, "center", w))
-        temp_art = _temp_ascii((hourly.get("time") or [])[:24], (hourly.get("temperature_2m") or [])[:24])
-        if temp_art:
-            parts.append(_art_block(temp_art, w))
+        m15 = weather.get("minutely_15") or {}
+        gt = m15.get("time") or hourly.get("time") or []
+        gv = m15.get("temperature_2m") or hourly.get("temperature_2m") or []
+        lim = 96 if m15.get("time") else 24
+        if gv:
+            parts.append(_temp_graph(gt[:lim], gv[:lim], w))
         extra = []
         if d0("precipitation_probability_max") is not None:
             extra.append(f"rain {d0('precipitation_probability_max')}%")
