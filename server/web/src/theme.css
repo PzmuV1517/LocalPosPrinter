@@ -126,3 +126,7 @@ nav.tabs button::before, nav.tabs button::after { content:none; }
 .modal { background:var(--surface); border:1px solid var(--border); max-width:780px; width:100%; max-height:85vh; overflow:auto; padding:18px; }
 .modal pre { white-space:pre-wrap; word-break:break-word; font-size:12px; background:var(--bg); border:1px solid var(--border); padding:10px; }
 tr.clickable:hover td { background:var(--surface2); cursor:pointer; }
+
+/* CRT power-on intro, plays once after a fresh login (see CrtBoot.tsx). The Pixi canvas overlays
+   the screen during the effect; this black layer covers the gap while it loads + snapshots. */
+.crt-blank { position: fixed; inset: 0; background: #000; z-index: 9998; }

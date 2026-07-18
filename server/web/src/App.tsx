@@ -3,12 +3,15 @@ import * as api from './api'
 import { Setup } from './screens/Setup'
 import { Login } from './screens/Login'
 import { Dashboard } from './screens/Dashboard'
+import { CrtBoot } from './CrtBoot'
 
 type Screen = 'loading' | 'setup' | 'gate' | 'app'
 
 export function App() {
   const [screen, setScreen] = useState<Screen>('loading')
   const [reason, setReason] = useState('')
+  // True only right after a fresh auth, so the CRT intro fires on login, not on session restore.
+  const [freshAuth, setFreshAuth] = useState(false)
 
   const boot = useCallback(async () => {
     try {
@@ -27,10 +30,14 @@ export function App() {
   // A transient 401 clears only the local token (does NOT revoke the server session).
   const onUnauthorized = useCallback(() => { api.clearToken(); setScreen('gate') }, [])
   const onLogout = useCallback(async () => { await api.logout(); setScreen('gate') }, [])
-  const onAuthed = useCallback((token: string) => { api.setToken(token); setReason(''); setScreen('app') }, [])
+  const onAuthed = useCallback((token: string) => { api.setToken(token); setReason(''); setFreshAuth(true); setScreen('app') }, [])
 
   if (screen === 'loading') return null
   if (screen === 'setup') return <Setup onAuthed={onAuthed} />
   if (screen === 'gate') return <Login onAuthed={onAuthed} reason={reason} />
-  return <Dashboard onLogout={onLogout} onUnauthorized={onUnauthorized} />
+  return (
+    <CrtBoot active={freshAuth}>
+      <Dashboard onLogout={onLogout} onUnauthorized={onUnauthorized} />
+    </CrtBoot>
+  )
 }
