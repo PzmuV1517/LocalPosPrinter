@@ -30,8 +30,9 @@ from .quotes import QUOTES
 # ---- layout constants (kept aligned with the Android renderer) ----
 DEFAULT_WIDTH = int(os.environ.get("PRINT_WIDTH", "384"))
 PAD = 12
-TEXT_SIZE = 30
-TITLE_SIZE = 44
+TEXT_SIZE = 24
+TITLE_SIZE = 34
+DEFAULT_BOLD = True   # the built-in mono prints bold by default, for thicker, more legible output
 BORDER = 3
 DIVIDER = 2
 TAB_WIDTH = 4
@@ -125,8 +126,8 @@ def _font_path_for(font_num: int, bold: bool) -> Optional[str]:
         p = os.path.join(_HERE, "fonts", fname)
         if os.path.isfile(p):
             return p
-    # font 2, unknown number, or a missing file -> the built-in mono font.
-    return _BOLD_PATH if bold else _REGULAR_PATH
+    # font 2, unknown number, or a missing file -> the built-in mono font (bold by default).
+    return _BOLD_PATH if (bold or DEFAULT_BOLD) else _REGULAR_PATH
 
 
 def _font(size: int, bold: bool, font_num: int = 1) -> ImageFont.FreeTypeFont:
