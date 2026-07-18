@@ -23,47 +23,85 @@ function accelerated(): boolean {
 // Fire from anywhere (e.g. the Settings test button) to replay the intro.
 export const replayCrt = () => window.dispatchEvent(new Event('crt-replay'))
 
-// Fake kernel/BIOS boot log that scrolls past after the flash (desktop only).
+// Fake kernel/BIOS boot log typed out after the flash (desktop only).
 const BOOT_LINES = `WATCHTOWER BIOS v2.3.4   (c) PzmuV1517
 POST ....................... OK
 CPU: phosphor-core @ 15.7kHz  [1 tube]
+L1 cache 32K  L2 cache 256K  ok
 Memory test: 65536 lines ... OK
 Detecting scanline controller ... found
 Initializing electron gun ...... ready
-[    0.000000] Booting WATCHTOWER kernel
+Aperture grille aligned  dot pitch 0.24
+[    0.000000] Booting WATCHTOWER kernel 2.3.4
+[    0.000381] Command line: ro quiet phosphor=green
 [    0.001132] Calibrating deflection yoke
+[    0.002007] Calibrating delay loop ... 4390.14 BogoMIPS
+[    0.003118] hpet: 3 channels
 [    0.004071] pid_max: default 32768
+[    0.005002] Mount-cache hash table entries: 2048
 [    0.006553] Mounting /dev/crt0
+[    0.007889] devtmpfs: initialized
 [    0.009210] phosphor: P1 persistence 12ms
-[    0.013887] Loading printer daemon ...... ok
+[    0.010774] clocksource: refresh 60.00Hz
+[    0.012330] NET: Registered protocol family 2
+[    0.013887] Loading printer daemon ......... ok
+[    0.015540] usb 1-1: Sunmi thermal head detected
+[    0.017001] printer: 384px width, 203dpi
 [    0.018402] relay: opening socket
+[    0.019995] relay: TLS handshake ... ok
 [    0.021995] relay: link up
+[    0.023660] relay: registered target 'default'
 [    0.026110] confer: encrypting channels
+[    0.028004] confer: SecretBox keys derived
 [    0.031264] confer: 4 rooms ready
-[    0.037781] mqtt: bridge listening
+[    0.034120] mqtt: starting embedded broker
+[    0.037781] mqtt: bridge listening 0.0.0.0:1883
+[    0.039900] mqtt: discovery published
 [    0.042013] scout: watchdog armed
+[    0.044550] scout: 2/3 agents reporting
 [    0.048662] weather: open-meteo handshake
+[    0.051200] weather: Bucharest 44.43N 26.10E
 [    0.055120] brief: 366 quotes indexed
-[    0.061330] auth: scrypt ready
-[    0.067884] tls: HSTS enforced
+[    0.058330] brief: sunrise 05:47  sunset 21:01
+[    0.061330] auth: scrypt N=16384 r=8 p=1
+[    0.064110] auth: session store online
+[    0.067884] tls: HSTS enforced  preload
+[    0.070550] tls: base-uri locked
 [    0.074001] net: HMAC identity verified
+[    0.077230] net: rate limiter armed
 [    0.081559] fs: journald forwarding online
+[    0.085004] fs: WAL checkpoint ok
 [    0.090114] input: touchscreen [absent]
+[    0.094880] input: keyboard [ps/2]
 [    0.101772] display: 1 CRT, fisheye enabled
+[    0.106540] display: barrel k=0.25  warp=78
+[    0.112000] battery: 82%  charging
 [  ok  ] Started phosphor warm-up
+[  ok  ] Started Printer Daemon
+[  ok  ] Started Relay Link
+[  ok  ] Started MQTT Bridge
+[  ok  ] Started Scout Watchdog
+[  ok  ] Reached target Network
 [  ok  ] Reached target Print Services
 [  ok  ] Reached target Confer
 [  ok  ] Reached target Multi-User System
 starting session for operator ...
+verifying token ........... ok
 decrypting vault .......... ok
+sync clock: 07:00 EET
 loading dashboard modules
   logs .......... ok
   print ......... ok
+  confer ........ ok
   devices ....... ok
   passwords ..... ok
   history ....... ok
   settings ...... ok
+mounting live feed ........ ok
+subscribing to relay ...... ok
+warming caches ............ ok
 handshake complete.
+all systems nominal.
 WATCHTOWER online.`
 
 const OPEN_MS = 570  // blank + line + bloom-open, matches the CSS animation timings
@@ -109,22 +147,27 @@ function warpMap(): string {
 // like a console as it fills. Starts just as the reveal bars open.
 function BootLog() {
   const [n, setN] = useState(0)
+  const box = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    // Pace so the last character lands just as the fisheye finishes fading.
-    const START = 300, END = OPEN_MS + FADE - 120
-    const perChar = Math.max(0.4, (END - START) / BOOT_LINES.length)
+    // Finish typing well before the end, then fade the whole log out (no abrupt pop).
+    const START = 250, TYPE_END = OPEN_MS + FADE - 900, FADE_OUT = 800
+    const perChar = Math.max(0.3, (TYPE_END - START) / BOOT_LINES.length)
     let raf = 0, mount = 0
     const step = (t: number) => {
       if (!mount) mount = t
       const e = t - mount
       setN(Math.max(0, Math.min(BOOT_LINES.length, Math.floor((e - START) / perChar))))
-      if (e < END) raf = requestAnimationFrame(step)
+      if (box.current) {
+        const over = e - TYPE_END
+        box.current.style.opacity = over > 0 ? String(Math.max(0, 1 - over / FADE_OUT)) : '1'
+      }
+      if (e < TYPE_END + FADE_OUT) raf = requestAnimationFrame(step)
     }
     raf = requestAnimationFrame(step)
     return () => cancelAnimationFrame(raf)
   }, [])
   return (
-    <div className="crt-boot" aria-hidden="true">
+    <div className="crt-boot" aria-hidden="true" ref={box}>
       <pre>{BOOT_LINES.slice(0, n)}<span className="crt-cursor">&#9611;</span></pre>
     </div>
   )
