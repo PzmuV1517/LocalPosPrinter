@@ -1643,8 +1643,9 @@ async def camera_stream(request: Request):
         finally:
             ch.viewers -= 1
 
+    # X-Accel-Buffering: no tells nginx not to buffer the feed, so frames reach the browser live.
     return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame",
-                             headers=_NO_CACHE)
+                             headers={**_NO_CACHE, "X-Accel-Buffering": "no"})
 
 
 @app.post("/agent/camera/push")

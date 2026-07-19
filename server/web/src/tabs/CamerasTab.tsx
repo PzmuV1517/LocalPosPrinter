@@ -26,7 +26,9 @@ function feeds(devices: Device[]): Feed[] {
  *  scout's camera. Also unmounts while the browser tab is hidden. */
 function FocusedCamera({ feed, onClose }: { feed: Feed; onClose: () => void }) {
   const [overlay, setOverlay] = useState(true)
-  const [loaded, setLoaded] = useState(false)
+  const [state, setState] = useState<'connecting' | 'live' | 'error'>('connecting')
+  const [slow, setSlow] = useState(false)
+  const [gen, setGen] = useState(0)  // bump to remount the <img> and reconnect
   const [now, setNow] = useState(Date.now())
   const [visible, setVisible] = useState(document.visibilityState === 'visible')
   useEffect(() => {
@@ -40,22 +42,50 @@ function FocusedCamera({ feed, onClose }: { feed: Feed; onClose: () => void }) {
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
   }, [onClose])
+  // If no frame lands in a few seconds, say so (scout may need an update / ffmpeg / proxy tweak).
+  useEffect(() => {
+    if (state !== 'connecting') return
+    setSlow(false)
+    const t = setTimeout(() => setSlow(true), 6000)
+    return () => clearTimeout(t)
+  }, [state, gen])
+  const retry = () => { setState('connecting'); setGen((g) => g + 1) }
 
   const { device, cam, online } = feed
+  const showImg = visible && online && state !== 'error'
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="cam-view" onClick={(e) => e.stopPropagation()}>
         <div className="cam-stage">
-          {visible && online
-            ? <img src={api.cameraStreamUrl(device.id, cam.node)} alt={cam.name}
-                onLoad={() => setLoaded(true)} onError={() => setLoaded(false)} />
-            : <div className="cam-placeholder">{online ? 'paused' : 'device offline'}</div>}
-          {visible && online && !loaded && <div className="cam-placeholder cam-abs">connecting…</div>}
+          {showImg && (
+            <img key={gen} src={api.cameraStreamUrl(device.id, cam.node)} alt={cam.name}
+              onLoad={() => setState('live')} onError={() => setState('error')} />
+          )}
+          {!online && <div className="cam-placeholder">device offline</div>}
+          {online && !visible && <div className="cam-placeholder">paused</div>}
+          {showImg && state === 'connecting' && (
+            <div className="cam-placeholder cam-abs">
+              connecting…
+              {slow && <div className="muted" style={{ marginTop: 6, maxWidth: 320 }}>
+                No frames yet. Check the scout is updated to 2.3.0 and has ffmpeg installed.
+              </div>}
+            </div>
+          )}
+          {online && visible && state === 'error' && (
+            <div className="cam-placeholder cam-abs">
+              no signal
+              <div className="muted" style={{ marginTop: 6, maxWidth: 320 }}>
+                Scout is not sending frames. Update it to 2.3.0, install ffmpeg, and (behind a proxy)
+                disable request buffering for /agent/camera/push.
+              </div>
+              <button className="ghost mini" style={{ marginTop: 10 }} onClick={retry}>Retry</button>
+            </div>
+          )}
           {overlay && (
             <div className="cam-overlay">
               <div><b>{cam.name}</b></div>
               <div className="muted">{device.name || device.id} · {cam.node}</div>
-              <div className="muted">{online ? 'live' : 'offline'} · {new Date(now).toLocaleString()}</div>
+              <div className="muted">{online ? state : 'offline'} · {new Date(now).toLocaleString()}</div>
             </div>
           )}
         </div>
