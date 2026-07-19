@@ -21,6 +21,12 @@ Watchtower Mobile (`android/`), Scout agent (`server/scout.py`).
 - Cut a GitHub release when a new APK ships. Print Hub tag `vX.Y.Z` (asset `SunmiPrintHub-*`);
   Watchtower Mobile tag `mobile-vX.Y.Z` (asset `WatchtowerMobile-*`).
 
+## Deploy notes
+- Camera MJPEG streaming needs the reverse proxy to stop buffering: `proxy_request_buffering
+  off` on `/agent/camera/push` and `proxy_buffering off` on `/watchtower/camera/stream`
+  (nginx). Lives only in the proxy config, not the repo, so re-add it on a rebuild. Camera
+  hosts need `ffmpeg`. See `server/README.md` (Reverse proxy).
+
 ## Verify
 - Server: `DATA_DIR=$(mktemp -d) python3 smoke_test.py` from `server/`.
 - Android: `./gradlew :app:assembleRelease` from `android/`.

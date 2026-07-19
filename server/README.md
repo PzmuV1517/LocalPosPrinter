@@ -306,6 +306,45 @@ pos.example.com {
 
 Caddy proxies WebSockets transparently; the Python process speaks plain HTTP/WS behind it.
 
+### Camera streaming needs buffering off
+
+Scout camera feeds are MJPEG: the scout streams one endless upload into
+`/agent/camera/push` and the browser reads an endless `multipart/x-mixed-replace` response
+from `/watchtower/camera/stream`. A buffering proxy holds both, so the feed hangs on
+"connecting". The server sends `X-Accel-Buffering: no` on the feed (covers nginx response
+buffering), but the upload still needs `proxy_request_buffering off`, which has no header
+equivalent. Add two locations **before** the catch-all `location /` (Caddy streams both by
+default, no change needed):
+
+```nginx
+location /agent/camera/push {
+    proxy_pass http://127.0.0.1:8007;   # your upstream
+    proxy_http_version 1.1;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    client_max_body_size 0;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+location /watchtower/camera/stream {
+    proxy_pass http://127.0.0.1:8007;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_cache off;
+    gzip off;
+    proxy_read_timeout 3600s;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Camera hosts also need `ffmpeg` installed (`apt install ffmpeg`); without it the scout logs
+the reason under service `scout.camera`.
+
 ## Endpoints
 
 | Method | Path | Auth | Purpose |
@@ -321,6 +360,9 @@ Caddy proxies WebSockets transparently; the Python process speaks plain HTTP/WS 
 | POST | `/alert` | session **or** master/temp pw **or** HMAC | MUIE alert intake |
 | POST | `/check` |, | Non-consuming password check |
 | POST | `/ingest` | **HMAC** | Scout log intake; auto-prints `err`+ |
+| POST | `/agent/camera/push` | push token | Scout streams a camera's MJPEG in (relayed to viewers) |
+| GET | `/watchtower/camera/stream` | session (query token) | Live MJPEG feed for one scout camera |
+| POST | `/watchtower/camera/select` | session/master | Toggle a camera into the Cameras tab |
 | POST | `/watchtower/logs` | session/master | Filtered logs + device cards + counts |
 | POST | `/watchtower/print` | session/master | Manually print a stored log by id |
 | POST | `/watchtower/devices/create` \| `/rotate` \| `/revoke` | session/master | Manage device secrets |
