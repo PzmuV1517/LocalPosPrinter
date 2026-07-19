@@ -38,11 +38,12 @@ import json
 import os
 import secrets
 import sys
+import threading
 import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
-SCOUT_VERSION = "2.2.0"
+SCOUT_VERSION = "2.3.0"
 
 # journald PRIORITY (syslog) -> our severity names.
 _JOURNAL_SEV = {0: "emerg", 1: "alert", 2: "crit", 3: "err", 4: "warning", 5: "notice", 6: "info", 7: "debug"}
@@ -84,6 +85,91 @@ def _collect_metrics() -> dict:
         except (OSError, ValueError):
             pass
     return m
+
+
+def _detect_cameras() -> list:
+    """UVC/webcam capture nodes (Linux, stdlib only). Each V4L2 device exposes several nodes; the
+    one with index 0 is its capture interface, so the others (metadata/output) are skipped."""
+    import glob
+    cams = []
+    for d in sorted(glob.glob("/sys/class/video4linux/video*")):
+        try:
+            with open(os.path.join(d, "index")) as f:
+                if f.read().strip() != "0":
+                    continue
+        except OSError:
+            continue
+        name = "camera"
+        try:
+            with open(os.path.join(d, "name")) as f:
+                name = f.read().strip() or name
+        except OSError:
+            pass
+        cams.append({"node": "/dev/" + os.path.basename(d), "name": name})
+    return cams
+
+
+_CAMS: dict = {}          # node -> capture thread, so a camera is only streamed once
+_CAMS_LOCK = threading.Lock()
+
+
+def _camera_stream(scout: "Scout", node: str, token: str, fps: int, size: str) -> None:
+    """Capture one camera with ffmpeg (continuous MJPEG) and chunk-upload the raw bytes to the
+    server, which splits frames and fans them out. The server closes the connection when the last
+    viewer leaves; the failed write then tears ffmpeg down, so a camera runs only while watched."""
+    import http.client
+    import subprocess
+    import urllib.parse
+    cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "v4l2", "-framerate", str(fps),
+           "-video_size", size, "-i", node, "-vcodec", "mjpeg", "-q:v", "6", "-f", "mjpeg", "pipe:1"]
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    except FileNotFoundError:
+        scout.log("warning", f"camera {node}: ffmpeg not installed", service="scout.camera")
+        _CAMS.pop(node, None)
+        return
+    u = urllib.parse.urlsplit(scout.url)
+    Conn = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
+    conn = Conn(u.netloc, timeout=20)
+    path = "/agent/camera/push?token=" + urllib.parse.quote(token)
+    try:
+        conn.putrequest("POST", path)
+        conn.putheader("Transfer-Encoding", "chunked")
+        conn.putheader("Content-Type", "application/octet-stream")
+        conn.endheaders()
+        while True:
+            data = proc.stdout.read(16384)
+            if not data:
+                break
+            conn.send(b"%x\r\n" % len(data) + data + b"\r\n")
+    except Exception:
+        pass  # server closed (no viewers) or network drop, tear down below
+    finally:
+        try:
+            conn.send(b"0\r\n\r\n")
+            conn.close()
+        except Exception:
+            pass
+        proc.terminate()
+        try:
+            proc.wait(timeout=3)
+        except Exception:
+            proc.kill()
+        _CAMS.pop(node, None)
+
+
+def _start_camera(scout: "Scout", cmd: dict) -> None:
+    node = cmd.get("node") or ""
+    if not node:
+        return
+    with _CAMS_LOCK:
+        if node in _CAMS:
+            return
+        t = threading.Thread(target=_camera_stream, args=(
+            scout, node, cmd.get("token", ""), int(cmd.get("fps") or 10),
+            str(cmd.get("size") or "640x480")), daemon=True)
+        _CAMS[node] = t
+        t.start()
 
 
 def _describe_error(e: Exception) -> str:
@@ -163,7 +249,8 @@ class Scout:
         The poll itself is the heartbeat that keeps this device shown as online, and carries
         host health metrics for the dashboard."""
         path = "/agent/poll"
-        body = json.dumps({"version": SCOUT_VERSION, "host": host, "metrics": _collect_metrics()}).encode()
+        body = json.dumps({"version": SCOUT_VERSION, "host": host, "metrics": _collect_metrics(),
+                           "cameras": _detect_cameras()}).encode()
         req = urllib.request.Request(self.url + path, data=body, method="POST",
                                      headers=self._sign("POST", path, body))
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -314,6 +401,8 @@ def run_agent(scout: "Scout") -> int:
                 elif c == "run":
                     print("run command received")
                     _run_command(scout, cmd.get("command", ""))
+                elif c == "camera" and cmd.get("action") == "start":
+                    _start_camera(scout, cmd)
                 elif c == "ping" and cmd.get("ack"):
                     # Manual ping, reply visibly. (Periodic pings omit "ack" and just refresh
                     # presence/version via this poll, so they don't flood the log stream.)

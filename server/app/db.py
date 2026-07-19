@@ -378,6 +378,13 @@ class Database:
                 )
             self._conn.commit()
 
+    def set_device_meta(self, device_id: str, meta: dict) -> None:
+        """Overwrite a device's meta without touching last_seen_at (operator edits, not a heartbeat)."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE devices SET meta_json=? WHERE id=?", (json.dumps(meta), device_id))
+            self._conn.commit()
+
     def device_meta(self, device_id: str) -> dict:
         with self._lock:
             row = self._conn.execute(

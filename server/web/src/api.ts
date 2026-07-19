@@ -135,6 +135,11 @@ export const pingScout = (device_id: string) => post<{ queued: number }>('/watch
 export const restartScout = (device_id: string) => post<{ queued: number }>('/watchtower/devices/command', { device_id, cmd: 'restart' })
 export const runOnScout = (device_id: string, command: string) => post('/watchtower/devices/run', { device_id, command })
 export const setHeartbeat = (device_id: string, seconds: number) => post('/watchtower/devices/heartbeat', { device_id, seconds })
+export const selectCamera = (device: string, node: string, selected: boolean) =>
+  post<{ ok: boolean; cameras_selected: string[] }>('/watchtower/camera/select', { device, node, selected })
+/** MJPEG stream URL for a scout camera. Token rides the query since an <img> sends no headers. */
+export const cameraStreamUrl = (device: string, node: string) =>
+  `/watchtower/camera/stream?device=${encodeURIComponent(device)}&node=${encodeURIComponent(node)}&token=${encodeURIComponent(getToken() ?? '')}`
 export const metricsSeries = (hours: number) =>
   post<{ start: number; width: number; buckets: number; err: number[]; other: number[] }>('/watchtower/metrics', { hours })
 export const testEmail = () => post<{ ok: boolean; message: string }>('/config/test-email', {})

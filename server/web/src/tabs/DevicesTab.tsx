@@ -99,6 +99,11 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
     const d = await guard(api.runOnScout(id, command))
     if (d) alert(`Running on ${id}. Output appears in Logs (service "scout.run") once the agent picks it up.`)
   }
+  async function selectCam(id: string, node: string, on: boolean) {
+    const r = await guard(api.selectCamera(id, node, on))
+    if (r) setDevices((ds) => ds.map((d) => d.id === id
+      ? { ...d, meta: { ...d.meta, cameras_selected: r.cameras_selected } } : d))
+  }
 
   return (
     <>
@@ -114,6 +119,7 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
                 onRotate: () => rotate(d.id), onRevoke: () => revoke(d.id), onDelete: () => del(d.id),
                 onUpdate: () => update(d.id), onPing: () => ping(d.id), onRestart: () => restartAgent(d.id),
                 onSetHeartbeat: (s) => setHb(d.id, s), onRun: (c) => runCmd(d.id, c),
+                onSelectCamera: (node, on) => selectCam(d.id, node, on),
               }} />)
             : <div className="muted" style={{ fontSize: 12 }}>No devices yet.</div>}
         </div>

@@ -20,6 +20,7 @@ import asyncio
 import json
 import os
 import platform
+import secrets
 import shutil
 import socket
 import subprocess
@@ -30,7 +31,8 @@ import urllib.request
 from collections import deque
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
+from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse, RedirectResponse,
+                               Response, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
 
 from . import crypto
@@ -1489,8 +1491,13 @@ async def agent_poll(request: Request) -> JSONResponse:
     metrics = body.get("metrics") if isinstance(body.get("metrics"), dict) else None
     if metrics:
         meta["metrics"] = metrics  # cpu/mem/disk/temp, shown on the device card
+    if isinstance(body.get("cameras"), list):
+        meta["cameras"] = body["cameras"]  # webcams the scout can stream
     if meta:
-        db.touch_device(device_id, meta=meta)
+        # Merge, don't replace: keep operator-set keys (e.g. cameras_selected) the poll never sends.
+        merged = db.device_meta(device_id)
+        merged.update(meta)
+        db.touch_device(device_id, meta=merged)
     # Disk-full alert (print + email), deduped.
     if metrics and disk_alert_pct() > 0:
         try:
@@ -1552,6 +1559,150 @@ async def ingest(request: Request) -> JSONResponse:
     await _maybe_email(device_id, severity, service, message)
     log.info("Ingest #%d [%s] %s/%s printed=%s", log_id, severity, device_id, service, printed)
     return JSONResponse({"ok": True, "id": log_id, "printed": printed, "would_print": should_print})
+
+
+# ---------------------------------------------------------------------------
+# Camera relay. A scout streams a webcam (ffmpeg MJPEG) up to /agent/camera/push; the browser
+# reads it back as multipart/x-mixed-replace from /watchtower/camera/stream. The whole path rides
+# the same TLS as everything else. A camera is captured only while at least one viewer is attached:
+# when the last <img> closes, the push loop sees viewers==0 and returns, dropping the scout's
+# connection so ffmpeg dies. Nothing streams when the tab is hidden or another camera is focused.
+# ---------------------------------------------------------------------------
+class CamChannel:
+    def __init__(self) -> None:
+        self.frame = b""
+        self.seq = 0
+        self.viewers = 0
+        self.pushing = False
+        self.start_ts = 0.0
+        self.event = asyncio.Event()
+
+    def set_frame(self, data: bytes) -> None:
+        self.frame = data
+        self.seq += 1
+        ev, self.event = self.event, asyncio.Event()
+        ev.set()
+
+
+_cam_channels: dict[str, CamChannel] = {}
+_cam_tokens: dict[str, tuple[str, str, float]] = {}  # push token -> (device, node, expiry)
+
+
+def _channel(device: str, node: str) -> CamChannel:
+    key = f"{device}|{node}"
+    ch = _cam_channels.get(key)
+    if ch is None:
+        ch = _cam_channels[key] = CamChannel()
+    return ch
+
+
+def _ensure_pushing(device: str, node: str, ch: CamChannel) -> None:
+    """Ask the scout to start capturing this camera, unless it already is (or was asked recently)."""
+    if ch.pushing or time.time() - ch.start_ts < 8 or not agents.online(device):
+        return
+    token = secrets.token_urlsafe(24)
+    _cam_tokens[token] = (device, node, time.time() + 30)
+    ch.start_ts = time.time()
+    agents.queue(device, {"cmd": "camera", "action": "start", "node": node,
+                          "token": token, "fps": 10, "size": "640x480"})
+
+
+async def _mjpeg(ch: CamChannel):
+    last = -1
+    while True:
+        ev = ch.event
+        if ch.seq != last:
+            last = ch.seq
+            yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n"
+                   % len(ch.frame)) + ch.frame + b"\r\n"
+        else:
+            try:
+                await asyncio.wait_for(ev.wait(), 15)
+            except asyncio.TimeoutError:
+                if not ch.pushing:
+                    break  # scout never connected or its stream died
+
+
+@app.get("/watchtower/camera/stream")
+async def camera_stream(request: Request):
+    # Token in the query, since an <img> can't send an Authorization header (same pattern as Confer).
+    if not auth.verify_session(request.query_params.get("token")):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    device = (request.query_params.get("device") or "").strip()
+    node = (request.query_params.get("node") or "").strip()
+    if not device or not node:
+        return JSONResponse({"error": "device and node required"}, status_code=400)
+    ch = _channel(device, node)
+
+    async def gen():
+        ch.viewers += 1
+        _ensure_pushing(device, node, ch)
+        try:
+            async for part in _mjpeg(ch):
+                yield part
+        finally:
+            ch.viewers -= 1
+
+    return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame",
+                             headers=_NO_CACHE)
+
+
+@app.post("/agent/camera/push")
+async def camera_push(request: Request) -> Response:
+    info = _cam_tokens.pop(request.query_params.get("token") or "", None)
+    if not info or info[2] < time.time():
+        return JSONResponse({"error": "bad or expired token"}, status_code=403)
+    device, node, _ = info
+    ch = _channel(device, node)
+    ch.pushing = True
+    buf = bytearray()
+    empty_since = 0.0
+    try:
+        async for chunk in request.stream():
+            buf += chunk
+            while True:  # split the raw MJPEG byte stream into JPEG frames (SOI..EOI)
+                s = buf.find(b"\xff\xd8")
+                if s < 0:
+                    if len(buf) > 2_000_000:
+                        del buf[:-2]
+                    break
+                e = buf.find(b"\xff\xd9", s + 2)
+                if e < 0:
+                    if s:
+                        del buf[:s]
+                    break
+                ch.set_frame(bytes(buf[s:e + 2]))
+                del buf[:e + 2]
+            if ch.viewers <= 0:
+                if not empty_since:
+                    empty_since = time.time()
+                elif time.time() - empty_since > 2:
+                    break  # nobody watching, return -> connection closes -> scout stops ffmpeg
+            else:
+                empty_since = 0.0
+    except Exception:
+        pass
+    finally:
+        ch.pushing = False
+    return Response(status_code=204)
+
+
+@app.post("/watchtower/camera/select")
+async def camera_select(request: Request) -> JSONResponse:
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    device = (body.get("device") or "").strip()
+    node = (body.get("node") or "").strip()
+    if not device or not node:
+        return JSONResponse({"error": "device and node required"}, status_code=400)
+    meta = db.device_meta(device)
+    sel = [n for n in (meta.get("cameras_selected") or []) if isinstance(n, str) and n != node]
+    if body.get("selected"):
+        sel.append(node)
+    meta["cameras_selected"] = sel
+    db.set_device_meta(device, meta)
+    return JSONResponse({"ok": True, "cameras_selected": sel})
 
 
 # ---------------------------------------------------------------------------

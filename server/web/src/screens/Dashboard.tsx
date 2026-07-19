@@ -4,13 +4,14 @@ import { useInterval } from '../common'
 import { LogsTab } from '../tabs/LogsTab'
 import { PrintTab } from '../tabs/PrintTab'
 import { DevicesTab } from '../tabs/DevicesTab'
+import { CamerasTab } from '../tabs/CamerasTab'
 import { PasswordsTab } from '../tabs/PasswordsTab'
 import { HistoryTab } from '../tabs/HistoryTab'
 import { SettingsTab } from '../tabs/SettingsTab'
 import { ConferTab } from '../tabs/ConferTab'
 
-type Tab = 'logs' | 'print' | 'confer' | 'devices' | 'passwords' | 'history' | 'settings'
-const TABS: Tab[] = ['logs', 'print', 'confer', 'devices', 'passwords', 'history', 'settings']
+type Tab = 'logs' | 'print' | 'confer' | 'devices' | 'cameras' | 'passwords' | 'history' | 'settings'
+const TABS: Tab[] = ['logs', 'print', 'confer', 'devices', 'cameras', 'passwords', 'history', 'settings']
 
 export function Dashboard({ onLogout, onUnauthorized }: { onLogout: () => void; onUnauthorized: () => void }) {
   const [tab, setTab] = useState<Tab>('logs')
@@ -52,6 +53,7 @@ export function Dashboard({ onLogout, onUnauthorized }: { onLogout: () => void; 
         {tab === 'print' && <PrintTab onUnauthorized={onUnauthorized} />}
         {tab === 'confer' && <ConferTab onUnauthorized={onUnauthorized} />}
         {tab === 'devices' && <DevicesTab onUnauthorized={onUnauthorized} />}
+        {tab === 'cameras' && <CamerasTab onUnauthorized={onUnauthorized} />}
         {tab === 'passwords' && <PasswordsTab onUnauthorized={onUnauthorized} />}
         {tab === 'history' && <HistoryTab onUnauthorized={onUnauthorized} />}
         {tab === 'settings' && <SettingsTab onUnauthorized={onUnauthorized} />}

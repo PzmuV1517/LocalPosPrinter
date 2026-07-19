@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Unauthorized } from './api'
-import type { Device, SevCounts, Severity } from './types'
+import type { Camera, Device, SevCounts, Severity } from './types'
 
 /** Wrap API calls so a 401 (expired/invalid token) bounces to the login gate. */
 export function useGuard(onUnauthorized: () => void) {
@@ -66,6 +66,7 @@ interface DeviceActions {
   onRotate: () => void; onRevoke: () => void; onDelete: () => void
   onUpdate: () => void; onPing: () => void; onRestart: () => void
   onSetHeartbeat: (secs: number) => void; onRun: (cmd: string) => void
+  onSelectCamera: (node: string, selected: boolean) => void
 }
 
 function HostMetrics({ m }: { m: Record<string, unknown> }) {
@@ -93,14 +94,19 @@ export function DeviceCard(
   const [hb, setHb] = useState(String(d.heartbeat_secs || 0))
   const [cmd, setCmd] = useState('')
   const metrics = (d.meta?.metrics as Record<string, unknown>) || {}
+  const cameras = (d.meta?.cameras as Camera[]) || []
+  const selected = (d.meta?.cameras_selected as string[]) || []
+  const ctl = actions && !d.revoked && !isPrinter
   return (
     <div className="device">
-      <div className="name">{d.name || d.id}{' '}
+      <div className="dev-head">
+        <div className="name">{d.name || d.id}</div>
         <span className="pill">{isPrinter ? 'printer' : 'scout'}</span>
-        {d.revoked && <span className="pill bad">revoked</span>}</div>
+        {d.revoked && <span className="pill bad">revoked</span>}
+      </div>
       <div className="id mono">{d.id}</div>
-      <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-        <span className={`dot ${online ? 'on' : ''}`} />
+      <div className="muted dev-status">
+        <span className={`dot ${online ? 'on' : 'off'}`} />
         {d.agent_online ? 'agent online' : online ? 'online' : 'offline'} · {d.last_seen_at ? fmtTime(d.last_seen_at) : 'never'}
         {isPrinter
           ? (battery != null && <> · {battery}% {d.meta?.charging ? 'charging' : 'on battery'}</>)
@@ -109,22 +115,41 @@ export function DeviceCard(
       {isPrinter ? (serial && <div className="muted" style={{ fontSize: 11 }}>serial {serial}</div>)
         : <HostMetrics m={metrics} />}
       <div className="sevs"><SevPills sevs={counts[d.id] || {}} /></div>
-      {actions && !d.revoked && !isPrinter && <>
-        <div className="devctl">
-          <span className="muted" style={{ fontSize: 11 }}>heartbeat</span>
-          <input value={hb} onChange={(e) => setHb(e.target.value)} style={{ width: 60 }} />
-          <span className="muted" style={{ fontSize: 11 }}>s</span>
-          <button className="ghost mini" onClick={() => actions.onSetHeartbeat(parseInt(hb, 10) || 0)}>set</button>
+
+      {ctl && cameras.length > 0 && (
+        <div className="dev-section">
+          <div className="dev-label">cameras</div>
+          {cameras.map((c) => (
+            <label className="cam-pick" key={c.node}>
+              <input type="checkbox" checked={selected.includes(c.node)}
+                onChange={(e) => actions!.onSelectCamera(c.node, e.target.checked)} />
+              <span className="cam-pick-name">{c.name}</span>
+              <span className="muted mono">{c.node}</span>
+            </label>
+          ))}
         </div>
-        <div className="devctl">
-          <input value={cmd} placeholder="shell command…" onChange={(e) => setCmd(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && cmd.trim()) { actions.onRun(cmd.trim()); setCmd('') } }} />
-          <button className="ghost mini" onClick={() => { if (cmd.trim()) { actions.onRun(cmd.trim()); setCmd('') } }}>run</button>
+      )}
+
+      {ctl && (
+        <div className="dev-section">
+          <div className="dev-label">controls</div>
+          <div className="dev-line">
+            <span className="muted">heartbeat</span>
+            <input value={hb} onChange={(e) => setHb(e.target.value)} style={{ width: 64 }} />
+            <span className="muted">s</span>
+            <button className="ghost mini" onClick={() => actions!.onSetHeartbeat(parseInt(hb, 10) || 0)}>set</button>
+          </div>
+          <div className="dev-line">
+            <input value={cmd} placeholder="shell command…" onChange={(e) => setCmd(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && cmd.trim()) { actions!.onRun(cmd.trim()); setCmd('') } }} />
+            <button className="ghost mini" onClick={() => { if (cmd.trim()) { actions!.onRun(cmd.trim()); setCmd('') } }}>run</button>
+          </div>
         </div>
-      </>}
+      )}
+
       {actions && (
-        <div className="actions" style={{ flexWrap: 'wrap' }}>
-          {!d.revoked && !isPrinter && <>
+        <div className="dev-btns">
+          {ctl && <>
             <button className="ghost mini" onClick={actions.onPing}>Ping</button>
             <button className="ghost mini" onClick={actions.onRestart}>Restart</button>
             <button className="ghost mini" onClick={actions.onUpdate}>Update</button>

@@ -14,6 +14,8 @@ export interface LogRow {
   ts: number
 }
 
+export interface Camera { node: string; name: string }
+
 export interface Device {
   id: string
   name: string

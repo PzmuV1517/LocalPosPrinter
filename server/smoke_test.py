@@ -204,6 +204,27 @@ rbody = json.dumps({"version": "2.2.0", "host": "h"}).encode()
 assert client.post("/agent/poll", data=rbody, headers=sign("POST", "/agent/poll", rbody)).json()["cmd"] == {"cmd": "run", "command": "uptime"}
 print("  ok  heartbeat set, metrics stored, run command delivered")
 
+# ---- cameras: reported on poll, operator selection persists, push rejects a bad token ----
+# (meta is stored before the poll's command wait, so queue a ping first to return the poll fast.)
+cbody = json.dumps({"version": "2.3.0", "host": "h",
+                    "cameras": [{"node": "/dev/video0", "name": "USB Cam"}]}).encode()
+def cam_poll():
+    client.post("/watchtower/devices/command", json={"device_id": "kitchen-pi", "cmd": "ping"}, headers=AUTH)
+    client.post("/agent/poll", data=cbody, headers=sign("POST", "/agent/poll", cbody))
+def kitchen():
+    return next(d for d in client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()["devices"] if d["id"] == "kitchen-pi")
+cam_poll()
+kp = kitchen()
+assert kp["meta"]["cameras"] == [{"node": "/dev/video0", "name": "USB Cam"}]
+assert kp["meta"]["metrics"]["disk_pct"] == 42.0  # earlier meta survived the merge, not clobbered
+sel = client.post("/watchtower/camera/select", json={"device": "kitchen-pi", "node": "/dev/video0", "selected": True}, headers=AUTH)
+assert sel.json()["cameras_selected"] == ["/dev/video0"]
+cam_poll()  # selection must survive the next heartbeat (poll meta merge must not wipe it)
+assert kitchen()["meta"]["cameras_selected"] == ["/dev/video0"]
+assert client.post("/agent/camera/push?token=bogus", content=b"x").status_code == 403
+assert client.get("/watchtower/camera/stream?device=kitchen-pi&node=/dev/video0&token=bad").status_code == 401
+print("  ok  cameras reported + selection persists across polls + push/stream auth gated")
+
 # ---- printer WebSocket registers as the print target; /status shows online + print delivers ----
 psec = client.post("/watchtower/devices/create", json={"device_id": "printer1", "name": "Printer"}, headers=AUTH).json()["secret"]
 whdr = sign("GET", "/messages", b"", device_id="printer1", secret=psec)
