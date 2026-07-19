@@ -43,7 +43,7 @@ import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
-SCOUT_VERSION = "2.3.0"
+SCOUT_VERSION = "2.3.1"
 
 # journald PRIORITY (syslog) -> our severity names.
 _JOURNAL_SEV = {0: "emerg", 1: "alert", 2: "crit", 3: "err", 4: "warning", 5: "notice", 6: "info", 7: "debug"}
@@ -116,22 +116,34 @@ _CAMS_LOCK = threading.Lock()
 def _camera_stream(scout: "Scout", node: str, token: str, fps: int, size: str) -> None:
     """Capture one camera with ffmpeg (continuous MJPEG) and chunk-upload the raw bytes to the
     server, which splits frames and fans them out. The server closes the connection when the last
-    viewer leaves; the failed write then tears ffmpeg down, so a camera runs only while watched."""
+    viewer leaves; the failed write then tears ffmpeg down, so a camera runs only while watched.
+    No forced resolution/framerate: many webcams reject an unsupported mode, so ffmpeg picks the
+    camera's default. If it yields no video, ffmpeg's own error is reported to the dashboard."""
     import http.client
     import subprocess
     import urllib.parse
-    cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "v4l2", "-framerate", str(fps),
-           "-video_size", size, "-i", node, "-vcodec", "mjpeg", "-q:v", "6", "-f", "mjpeg", "pipe:1"]
+    cmd = ["ffmpeg", "-nostdin", "-loglevel", "error", "-f", "v4l2", "-i", node,
+           "-vcodec", "mjpeg", "-q:v", "6", "-f", "mjpeg", "pipe:1"]
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except FileNotFoundError:
-        scout.log("warning", f"camera {node}: ffmpeg not installed", service="scout.camera")
+        scout.log("warning", f"camera {node}: ffmpeg not installed (apt install ffmpeg)",
+                  service="scout.camera")
         _CAMS.pop(node, None)
         return
+    err_tail: list = []
+
+    def _drain_err():
+        for ln in proc.stderr:
+            err_tail.append(ln)
+            del err_tail[:-20]
+
+    threading.Thread(target=_drain_err, daemon=True).start()
     u = urllib.parse.urlsplit(scout.url)
     Conn = http.client.HTTPSConnection if u.scheme == "https" else http.client.HTTPConnection
     conn = Conn(u.netloc, timeout=20)
     path = "/agent/camera/push?token=" + urllib.parse.quote(token)
+    sent = 0
     try:
         conn.putrequest("POST", path)
         conn.putheader("Transfer-Encoding", "chunked")
@@ -142,6 +154,7 @@ def _camera_stream(scout: "Scout", node: str, token: str, fps: int, size: str) -
             if not data:
                 break
             conn.send(b"%x\r\n" % len(data) + data + b"\r\n")
+            sent += len(data)
     except Exception:
         pass  # server closed (no viewers) or network drop, tear down below
     finally:
@@ -156,6 +169,10 @@ def _camera_stream(scout: "Scout", node: str, token: str, fps: int, size: str) -
         except Exception:
             proc.kill()
         _CAMS.pop(node, None)
+        if sent == 0:
+            tail = b"".join(err_tail).decode(errors="replace").strip()[-400:]
+            scout.log("warning", f"camera {node}: ffmpeg produced no video. {tail or '(no error output)'}",
+                      service="scout.camera")
 
 
 def _start_camera(scout: "Scout", cmd: dict) -> None:

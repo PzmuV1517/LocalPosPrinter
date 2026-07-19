@@ -1611,7 +1611,7 @@ async def _mjpeg(ch: CamChannel):
     last = -1
     while True:
         ev = ch.event
-        if ch.seq != last:
+        if ch.seq != last and ch.frame:  # skip the empty initial frame; wait for a real one
             last = ch.seq
             yield (b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n"
                    % len(ch.frame)) + ch.frame + b"\r\n"
