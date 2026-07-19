@@ -1396,6 +1396,14 @@ def _fetch_weather() -> dict:
            "&timezone=Europe%2FBucharest&forecast_days=4")
     with urllib.request.urlopen(url, timeout=10) as r:
         data = json.loads(r.read().decode())
+    # Air quality is a separate keyless endpoint; a failure here must not break the weather.
+    air_url = ("https://air-quality-api.open-meteo.com/v1/air-quality?" + _BUCHAREST +
+               "&current=european_aqi,pm2_5,pm10&timezone=Europe%2FBucharest")
+    try:
+        with urllib.request.urlopen(air_url, timeout=10) as r:
+            data["air_quality"] = json.loads(r.read().decode()).get("current", {})
+    except Exception as exc:
+        log.warning("Air quality fetch failed: %s", exc)
     _weather_cache.update(ts=time.time(), data=data)
     return data
 

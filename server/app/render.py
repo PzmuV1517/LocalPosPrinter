@@ -20,7 +20,7 @@ import os
 import random
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont, ImageOps
@@ -877,6 +877,66 @@ def _year_progress(cols: int = 24):
     return now.year, total - doy, round(pct * 100), bar, QUOTES[(doy - 1) % len(QUOTES)]
 
 
+_MOON_NAMES = [
+    (0.02, "New moon"), (0.24, "Waxing crescent"), (0.26, "First quarter"),
+    (0.49, "Waxing gibbous"), (0.51, "Full moon"), (0.74, "Waning gibbous"),
+    (0.76, "Last quarter"), (0.98, "Waning crescent"),
+]
+
+
+def _moon() -> tuple:
+    # Phase from days since a known new moon (2000-01-06), synodic month 29.53 days. Good to a day.
+    ref = datetime(2000, 1, 6, 18, 14, tzinfo=timezone.utc)
+    days = (datetime.now(timezone.utc) - ref).total_seconds() / 86400.0
+    p = (days % 29.53058867) / 29.53058867
+    illum = (1 - math.cos(2 * math.pi * p)) / 2
+    name = next((n for thr, n in _MOON_NAMES if p <= thr), "New moon")
+    return p, illum, name
+
+
+def _moon_ascii(p: float, rows: int = 9, cols: int = 19) -> List[str]:
+    lines = []
+    for iy in range(rows):
+        y = (iy / (rows - 1)) * 2 - 1
+        row = ""
+        for ix in range(cols):
+            x = (ix / (cols - 1)) * 2 - 1
+            if x * x + y * y > 1.0:
+                row += " "
+                continue
+            wref = math.sqrt(max(0.0, 1 - y * y))
+            if p < 0.5:            # waxing: lit on the right
+                lit = x > math.cos(2 * math.pi * p) * wref
+            else:                  # waning: lit on the left
+                lit = x < -math.cos(2 * math.pi * p) * wref
+            row += "@" if lit else "."
+        lines.append(row)
+    return lines
+
+
+_AQI_BANDS = [(20, "good"), (40, "fair"), (60, "moderate"), (80, "poor"), (100, "very poor")]
+
+
+def _aqi_word(aqi: float) -> str:
+    return next((w for thr, w in _AQI_BANDS if aqi <= thr), "hazardous")
+
+
+def _air_particles(aqi: float, w_cells: int = 22, h_cells: int = 5) -> List[str]:
+    # Haze box: the worse the air, the denser the drifting particles you see through it.
+    dens = min(1.0, max(0.0, aqi) / 120.0)
+    rng = random.Random(round(aqi))
+    n = int(w_cells * h_cells * dens * 0.6)
+    cells = set()
+    while len(cells) < n:
+        cells.add((rng.randrange(h_cells), rng.randrange(w_cells)))
+    top = "+" + "-" * w_cells + "+"
+    lines = [top]
+    for r in range(h_cells):
+        lines.append("|" + "".join("." if (r, c) in cells else " " for c in range(w_cells)) + "|")
+    lines.append(top)
+    return lines
+
+
 def _daylight(sunrise: str, sunset: str) -> str:
     try:
         secs = (datetime.fromisoformat(sunset) - datetime.fromisoformat(sunrise)).total_seconds()
@@ -944,6 +1004,23 @@ def render_brief(weather: dict, server_lines: List[str], greeting: str,
             extra.append(f"wind {round(d0('wind_speed_10m_max'))}km/h")
         if extra:
             parts.append(_text_block("   ".join(extra), 24, False, "center", w))
+
+        p_m, illum, mname = _moon()
+        parts.append(_rule_img(w))
+        parts.append(_text_block("MOON", 28, True, "center", w))
+        parts.append(_art_block(_moon_ascii(p_m), w))
+        parts.append(_text_block(f"{mname}  {round(illum * 100)}% lit", 22, False, "center", w))
+
+        air = weather.get("air_quality") or {}
+        aqi = air.get("european_aqi")
+        if aqi is not None:
+            parts.append(_rule_img(w))
+            parts.append(_text_block("AIR QUALITY", 28, True, "center", w))
+            parts.append(_text_block(f"AQI {round(aqi)}  ({_aqi_word(aqi)})", 22, False, "center", w))
+            parts.append(_art_block(_air_particles(aqi), w))
+            pm25, pm10 = air.get("pm2_5"), air.get("pm10")
+            if pm25 is not None and pm10 is not None:
+                parts.append(_text_block(f"pm2.5 {round(pm25)}   pm10 {round(pm10)}", 20, False, "center", w))
     else:
         parts.append(_text_block("weather unavailable", 24, False, "center", w))
 
