@@ -1656,11 +1656,15 @@ async def camera_push(request: Request) -> Response:
     device, node, _ = info
     ch = _channel(device, node)
     ch.pushing = True
+    log.info("Camera push connected: %s %s (%d viewer(s))", device, node, ch.viewers)
+    frames = 0
+    total = 0
     buf = bytearray()
     empty_since = 0.0
     try:
         async for chunk in request.stream():
             buf += chunk
+            total += len(chunk)
             while True:  # split the raw MJPEG byte stream into JPEG frames (SOI..EOI)
                 s = buf.find(b"\xff\xd8")
                 if s < 0:
@@ -1673,6 +1677,7 @@ async def camera_push(request: Request) -> Response:
                         del buf[:s]
                     break
                 ch.set_frame(bytes(buf[s:e + 2]))
+                frames += 1
                 del buf[:e + 2]
             if ch.viewers <= 0:
                 if not empty_since:
@@ -1685,6 +1690,7 @@ async def camera_push(request: Request) -> Response:
         pass
     finally:
         ch.pushing = False
+        log.info("Camera push ended: %s %s (%d bytes, %d frames relayed)", device, node, total, frames)
     return Response(status_code=204)
 
 

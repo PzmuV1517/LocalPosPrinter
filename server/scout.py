@@ -43,7 +43,7 @@ import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
-SCOUT_VERSION = "2.3.1"
+SCOUT_VERSION = "2.3.2"
 
 # journald PRIORITY (syslog) -> our severity names.
 _JOURNAL_SEV = {0: "emerg", 1: "alert", 2: "crit", 3: "err", 4: "warning", 5: "notice", 6: "info", 7: "debug"}
@@ -173,6 +173,11 @@ def _camera_stream(scout: "Scout", node: str, token: str, fps: int, size: str) -
             tail = b"".join(err_tail).decode(errors="replace").strip()[-400:]
             scout.log("warning", f"camera {node}: ffmpeg produced no video. {tail or '(no error output)'}",
                       service="scout.camera")
+        else:
+            # Confirms the scout->server leg worked; if the browser still saw nothing, the loss is
+            # between the server and the browser (proxy buffering the feed).
+            scout.log("info", f"camera {node}: streamed, sent {sent} bytes", service="scout.camera",
+                      no_print=True)
 
 
 def _start_camera(scout: "Scout", cmd: dict) -> None:
