@@ -1037,6 +1037,8 @@ async def preview(request: Request) -> Response:
         return Response(content=rendermod.to_png_bytes(await _build_brief_image()), media_type="image/png")
     if payload.get("format") == "status":
         payload = _status_payload(str(payload.get("by") or "dashboard preview"))
+    if payload.get("format") == "battery":
+        payload = _battery_sample_payload()
     if not admin:
         err = _public_limit_error(payload)
         if err:
@@ -1138,6 +1140,8 @@ async def _print_payload(payload: dict, authed_device=None, authed_session=False
         return JSONResponse({"error": "Not available on public prints"}, status_code=403)
     if payload.get("format") == "status":
         payload = _status_payload(str(payload.get("by") or payload.get("service") or user))
+    if payload.get("format") == "battery":
+        payload = _battery_sample_payload()
 
     # Temp-password (public) prints are size-capped and image-free to protect the paper roll.
     if temp_pw:
@@ -1208,6 +1212,49 @@ def _log_to_alert_payload(device_id: str, severity: str, service: str, message: 
         "sent_at": ts,
         "print_mode": "receipt",
     }
+
+
+# Low-battery alerts for a printer. Each threshold fires once as the level crosses it going down,
+# then re-arms when the battery recovers back above it (charging / battery swap), so a printer
+# sitting at a low level doesn't re-alert every status frame.
+BATTERY_THRESHOLDS = (20, 10, 5)
+_BATT_SEV = {20: "warning", 10: "err", 5: "crit"}
+
+
+def _battery_message(label: str, level: int, threshold: int) -> str:
+    return f"{label} battery low: {level}% (alert at {threshold}%)"
+
+
+def _battery_updates(pm: dict, label: str) -> list:
+    """Mutate pm['batt_alerted'] for the printer's current level; return alerts to fire (at most the
+    most severe threshold just crossed, so a big drop doesn't spew a stack of prints)."""
+    try:
+        level = int(pm.get("battery"))
+    except (TypeError, ValueError):
+        return []
+    alerted = set(pm.get("batt_alerted") or [])
+    crossed = []
+    for t in BATTERY_THRESHOLDS:
+        if level <= t and t not in alerted:
+            alerted.add(t)
+            crossed.append(t)
+        elif level > t and t in alerted:
+            alerted.discard(t)  # recovered above this threshold, re-arm it
+    pm["batt_alerted"] = sorted(alerted, reverse=True)
+    if not crossed:
+        return []
+    t = min(crossed)  # smallest threshold crossed == most severe
+    return [(_BATT_SEV.get(t, "warning"), "printer.battery", _battery_message(label, level, t))]
+
+
+def _battery_sample_payload() -> dict:
+    """A representative low-battery alert for the Print tab, so the printed form can be tested
+    without draining a battery. Uses the connected printer's id if there is one."""
+    printer = next((d for d in db.list_devices()
+                    if not d["revoked"] and (d.get("meta") or {}).get("role") == "printer"), None)
+    label = (printer or {}).get("name") or (printer or {}).get("id") or "printer"
+    return _log_to_alert_payload(label, "crit", "printer.battery",
+                                 _battery_message(label, 5, 5), time.time())
 
 
 # ---------------------------------------------------------------------------
@@ -2017,7 +2064,10 @@ async def messages(ws: WebSocket) -> None:
                     pm["printer_state"] = str(frame.get("printer_state"))
                 if frame.get("serial"):
                     pm["serial"] = str(frame.get("serial"))
-                db.touch_device(auth_id, meta=pm)
+                fires = _battery_updates(pm, auth_id)
+                db.touch_device(auth_id, meta=pm)  # persist batt_alerted before firing
+                for sev, svc, msg in fires:
+                    await _fire_alert(auth_id, sev, svc, msg)
             # Any other frame is ignored (kept for forward-compat).
     except WebSocketDisconnect:
         pass

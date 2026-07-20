@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as api from '../api'
 import { useGuard, SEV_ORDER } from '../common'
 
-type Fmt = 'plain' | 'centered' | 'boxed' | 'header_body' | 'banner' | 'list' | 'barcode' | 'qrcode' | 'image' | 'alert' | 'status' | 'brief'
+type Fmt = 'plain' | 'centered' | 'boxed' | 'header_body' | 'banner' | 'list' | 'barcode' | 'qrcode' | 'image' | 'alert' | 'status' | 'brief' | 'battery'
 type Vis = Partial<Record<'title' | 'text' | 'text_size' | 'barcode_type' | 'border_style' | 'items' | 'image' | 'alert_type' | 'service', boolean>>
 
 const FIELD_VIS: Record<Fmt, Vis> = {
@@ -18,9 +18,10 @@ const FIELD_VIS: Record<Fmt, Vis> = {
   alert: { text: true, alert_type: true, service: true },
   status: {},  // server-generated report, no input fields
   brief: {},   // daily weather + systems brief, no input fields
+  battery: {}, // sample low-battery alert, no input fields
 }
 const FONT_FAMILY: Record<string, string> = { '1': 'monospace', '2': 'Jersey10', '3': 'Jacquard12', '4': 'Doto' }
-const FMTS: Fmt[] = ['plain', 'centered', 'boxed', 'header_body', 'banner', 'list', 'barcode', 'qrcode', 'image', 'alert', 'status', 'brief']
+const FMTS: Fmt[] = ['plain', 'centered', 'boxed', 'header_body', 'banner', 'list', 'barcode', 'qrcode', 'image', 'alert', 'status', 'brief', 'battery']
 const BORDERS = ['line', 'dashes', 'equals', 'asterisk', 'at', 'hash', 'dot', 'plus', 'wave', 'box', 'double', 'rounded']
 
 export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
@@ -132,6 +133,10 @@ export function PrintTab({ onUnauthorized }: { onUnauthorized: () => void }) {
           </p>}
           {format === 'brief' && <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
             Daily brief: Bucharest weather (temp graph, sunrise/sunset) plus a systems summary. No fields needed.
+          </p>}
+          {format === 'battery' && <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            Sample low-battery alert, exactly what prints when a printer drops to 20%, 10% or 5%
+            (this preview shows the 5% case). Fires automatically per printer; no fields needed.
           </p>}
 
           {vis.alert_type && <><label>Alert type (severity)</label>

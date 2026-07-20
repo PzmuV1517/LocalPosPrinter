@@ -23,7 +23,7 @@ from PIL import Image  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import render as r  # noqa: E402
-from app.main import app  # noqa: E402
+from app.main import app, _battery_updates  # noqa: E402
 
 MASTER_PASSWORD = "smoke-master-pw"
 USERNAME = "admin"
@@ -46,6 +46,22 @@ for c in cases:
     img = r.render(c, 384)
     assert img.width == 384 and img.height > 0, (c["format"], img.width)
     print(f"  ok  render {c['format']:<12} -> {img.width}x{img.height}")
+
+# ---- printer low-battery threshold crossings (fire once each, re-arm on recovery) ----
+pm = {"battery": 22}
+assert _battery_updates(pm, "printer1") == []                       # above all thresholds
+pm["battery"] = 18
+assert [f[0] for f in _battery_updates(pm, "printer1")] == ["warning"]  # crossed 20
+assert _battery_updates(pm, "printer1") == []                       # still 18, no repeat
+pm["battery"] = 9
+assert [f[0] for f in _battery_updates(pm, "printer1")] == ["err"]   # crossed 10
+pm["battery"] = 4
+assert [f[0] for f in _battery_updates(pm, "printer1")] == ["crit"]  # crossed 5
+pm["battery"] = 30                                                   # charged back up
+assert _battery_updates(pm, "printer1") == [] and pm["batt_alerted"] == []  # all re-armed
+pm["battery"] = 3                                                    # big drop past all three
+assert [f[0] for f in _battery_updates(pm, "printer1")] == ["crit"]  # only most-severe fires
+print("  ok  low-battery alerts fire once per threshold, re-arm on recovery")
 
 client = TestClient(app)
 
