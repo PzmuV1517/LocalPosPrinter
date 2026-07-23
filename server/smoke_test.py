@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app import render as r  # noqa: E402
 from app.main import app, _battery_updates  # noqa: E402
+from scout import _parse_syslog  # noqa: E402
 
 MASTER_PASSWORD = "smoke-master-pw"
 USERNAME = "admin"
@@ -62,6 +63,12 @@ assert _battery_updates(pm, "printer1") == [] and pm["batt_alerted"] == []  # al
 pm["battery"] = 3                                                    # big drop past all three
 assert [f[0] for f in _battery_updates(pm, "printer1")] == ["crit"]  # only most-severe fires
 print("  ok  low-battery alerts fire once per threshold, re-arm on recovery")
+
+# ---- scout syslog parsing (severity from PRI, host/tag best-effort) ----
+assert _parse_syslog(b"<11>Oct 11 22:14:15 web01 nginx[123]: connect() failed") == ("err", "web01", "nginx", "connect() failed")
+assert _parse_syslog(b"<13>1 2023-10-11T22:14:15Z host01 app 99 - - hello there") == ("notice", "host01", "app", "hello there")
+assert _parse_syslog(b"no pri here")[0] == "info"
+print("  ok  scout syslog parse maps PRI->severity and pulls host/tag")
 
 client = TestClient(app)
 

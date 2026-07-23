@@ -36,6 +36,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sys
 import threading
@@ -43,7 +44,7 @@ import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
-SCOUT_VERSION = "2.3.2"
+SCOUT_VERSION = "2.4.0"
 
 # journald PRIORITY (syslog) -> our severity names.
 _JOURNAL_SEV = {0: "emerg", 1: "alert", 2: "crit", 3: "err", 4: "warning", 5: "notice", 6: "info", 7: "debug"}
@@ -363,8 +364,52 @@ def _forward_file(scout: "Scout", path: str, sev: str, floor: str, no_print: boo
             scout.log(sev, line[:2000], service=svc, no_print=no_print)
 
 
+_SYSLOG_PRI = re.compile(rb"^<(\d{1,3})>(.*)$", re.S)
+# RFC3164: "Mon DD HH:MM:SS host tag[pid]: msg"   RFC5424: "1 ts host app pid msgid sd msg"
+_SYSLOG_3164 = re.compile(r"^(?:\w{3}\s+\d+\s[\d:]+\s+)?(\S+)\s+([^:\[\s]+)(?:\[\d+\])?:\s?(.*)$", re.S)
+_SYSLOG_5424 = re.compile(r"^1\s+\S+\s+(\S+)\s+(\S+)\s+\S+\s+\S+\s+(?:\[.*?\]|-)\s?(.*)$", re.S)
+
+
+def _parse_syslog(raw: bytes):
+    """A syslog datagram -> (severity, host, tag, message). Severity comes from the PRI byte
+    (facility*8 + severity), which is reliable; host/tag are best-effort from the two common
+    formats. Returns severity 'info' and empty host/tag when it can't be parsed."""
+    sevnum, rest = 6, raw
+    m = _SYSLOG_PRI.match(raw)
+    if m:
+        sevnum = int(m.group(1)) & 7
+        rest = m.group(2)
+    sev = _JOURNAL_SEV.get(sevnum, "info")
+    text = rest.decode(errors="replace").strip()
+    host, tag = "", "syslog"
+    mm = _SYSLOG_5424.match(text) or _SYSLOG_3164.match(text)
+    if mm:
+        host, tag, text = mm.group(1), mm.group(2), mm.group(3)
+    return sev, host, tag, text
+
+
+def _forward_syslog(scout: "Scout", floor: str, no_print: bool, bind: str, port: int) -> None:
+    """Receive syslog over UDP and forward each message to Watchtower with its own severity, tagged
+    by the sending host. One host scout thus collects every VM/LXC that points rsyslog at it. Plain
+    UDP, so keep it on the internal network (the scout->Watchtower leg stays TLS/HMAC)."""
+    import socket
+    floor_rank = _sevrank(floor)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    sock.bind((bind, port))
+    while True:
+        try:
+            data, addr = sock.recvfrom(65535)
+        except OSError:
+            continue
+        sev, host, tag, text = _parse_syslog(data)
+        if not text or _sevrank(sev) > floor_rank:
+            continue
+        scout.log(sev, text[:2000], service=f"{host or addr[0]}/{tag}", no_print=no_print)
+
+
 def _start_forwarders(scout: "Scout") -> list:
-    """Start journald/file forwarders (in daemon threads) per SCOUT_FORWARD_* env vars."""
+    """Start journald/file/syslog forwarders (in daemon threads) per SCOUT_FORWARD_* env vars."""
     import threading
     floor = os.environ.get("SCOUT_FORWARD_MIN_SEV", "warning")
     no_print = os.environ.get("SCOUT_FORWARD_NO_PRINT", "1") != "0"
@@ -377,6 +422,11 @@ def _start_forwarders(scout: "Scout") -> list:
         threading.Thread(target=_forward_file, args=(scout, path.strip(), (sev or "info").strip(), floor, no_print),
                          daemon=True).start()
         started.append(path.strip())
+    if os.environ.get("SCOUT_FORWARD_SYSLOG", "0") == "1":
+        bind = os.environ.get("SCOUT_SYSLOG_BIND", "0.0.0.0")
+        port = int(os.environ.get("SCOUT_SYSLOG_PORT", "514"))
+        threading.Thread(target=_forward_syslog, args=(scout, floor, no_print, bind, port), daemon=True).start()
+        started.append(f"syslog:{port}")
     return started
 
 
