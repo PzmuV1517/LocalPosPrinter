@@ -394,7 +394,12 @@ conf_set() { tmp=$(mktemp); grep -v "^$1=" "$CONF" 2>/dev/null > "$tmp"; echo "$
 conf_get() { grep "^$1=" "$CONF" 2>/dev/null | head -1 | cut -d= -f2-; }
 ask_yn() { p="$1"; d="$2"; a=""; printf "%s " "$p" > "$TTY"; read a < "$TTY" 2>/dev/null; a="${a:-$d}"; case "$a" in [Yy]*) return 0;; *) return 1;; esac; }
 
-is_proxmox() { command -v pveversion >/dev/null 2>&1 || [ -d /etc/pve ]; }
+# Detect a Proxmox node even as a non-root user (its PATH may lack /usr/sbin, and /etc/pve is a
+# fuse mount a plain user can't stat), by also probing absolute paths that are world-readable.
+is_proxmox() {
+  command -v pveversion >/dev/null 2>&1 || [ -d /etc/pve ] \
+    || [ -e /usr/bin/pveversion ] || [ -e /usr/sbin/pveversion ] || [ -d /usr/share/pve-manager ]
+}
 
 # On a Proxmox node: forward the host journal AND stand up a syslog receiver, run as a root system
 # service (full journal + privileged port 514), and point every running LXC at it. One scout, whole
