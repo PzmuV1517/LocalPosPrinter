@@ -44,7 +44,7 @@ import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
-SCOUT_VERSION = "2.5.0"
+SCOUT_VERSION = "2.6.0"
 
 # journald PRIORITY (syslog) -> our severity names.
 _JOURNAL_SEV = {0: "emerg", 1: "alert", 2: "crit", 3: "err", 4: "warning", 5: "notice", 6: "info", 7: "debug"}
@@ -507,6 +507,8 @@ def run_agent(scout: "Scout") -> int:
                     _run_command(scout, cmd.get("command", ""))
                 elif c == "camera" and cmd.get("action") == "start":
                     _start_camera(scout, cmd)
+                elif c == "refresh-guests":
+                    _PVE_CACHE["data"] = None  # next poll re-scans the guest inventory now
                 elif c == "ping" and cmd.get("ack"):
                     # Manual ping, reply visibly. (Periodic pings omit "ack" and just refresh
                     # presence/version via this poll, so they don't flood the log stream.)

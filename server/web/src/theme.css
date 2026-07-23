@@ -143,7 +143,8 @@ nav.tabs button::before, nav.tabs button::after { content:none; }
 .cam-tile::before, .cam-tile::after { content:none; }
 .cam-tile:not(:disabled):hover { border-color:var(--muted); background:var(--surface2); }
 .cam-tile:disabled { opacity:.55; }
-.cam-thumb { aspect-ratio:4/3; background:#000; display:flex; align-items:center; justify-content:center; border-bottom:1px solid var(--border); }
+.cam-thumb { aspect-ratio:4/3; background:#000; display:flex; align-items:center; justify-content:center; border-bottom:1px solid var(--border); overflow:hidden; }
+.cam-thumb img { width:100%; height:100%; object-fit:cover; }
 .cam-glyph { color:#2b2b2b; font-size:40px; line-height:1; }
 .cam-meta { padding:8px 9px; display:flex; flex-direction:column; gap:2px; }
 .cam-name { font-size:12px; }

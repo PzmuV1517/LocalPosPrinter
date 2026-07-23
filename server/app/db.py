@@ -525,6 +525,22 @@ class Database:
             out.setdefault(r["device_id"] or "?", {})[r["severity"]] = r["c"]
         return out
 
+    def host_error_counts(self, since_secs: float = 86400) -> Dict[str, int]:
+        """err+ counts keyed by source host, parsed from the 'host/tag' service that forwarded
+        syslog carries. Lets the dashboard show per-guest error stats under a Proxmox scout."""
+        cutoff = time.time() - since_secs
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT service, COUNT(*) c FROM logs WHERE sev_num<=3 AND ts>=? AND service LIKE '%/%' "
+                "GROUP BY service", (cutoff,),
+            ).fetchall()
+        out: Dict[str, int] = {}
+        for r in rows:
+            host = (r["service"] or "").split("/", 1)[0]
+            if host:
+                out[host] = out.get(host, 0) + r["c"]
+        return out
+
     @staticmethod
     def _log_row(r: sqlite3.Row) -> dict:
         return {

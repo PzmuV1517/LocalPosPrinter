@@ -23,7 +23,7 @@ from PIL import Image  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from app import render as r  # noqa: E402
-from app.main import app, _battery_updates  # noqa: E402
+from app.main import app, _battery_updates, _apply_overrides  # noqa: E402
 from scout import _parse_syslog  # noqa: E402
 
 MASTER_PASSWORD = "smoke-master-pw"
@@ -253,6 +253,21 @@ assert kitchen()["meta"]["proxmox"]["guests"][0]["name"] == "web"
 assert client.post("/agent/camera/push?token=bogus", content=b"x").status_code == 403
 assert client.get("/watchtower/camera/stream?device=kitchen-pi&node=/dev/video0&token=bad").status_code == 401
 print("  ok  cameras reported + selection persists across polls + push/stream auth gated")
+
+# ---- severity overrides lower matching messages (never raise) + host_errors in logs ----
+assert _apply_overrides("noisy.svc", "just a blip", "err") == "err"  # no rule yet
+_ov = client.post("/watchtower/overrides", json={"action": "add", "service": "noisy.svc",
+                  "match": "blip", "severity": "info"}, headers=AUTH).json()["overrides"]
+assert len(_ov) == 1
+assert _apply_overrides("noisy.svc", "just a blip", "err") == "info"      # lowered
+assert _apply_overrides("noisy.svc", "real problem", "err") == "err"      # match miss -> unchanged
+assert _apply_overrides("other.svc", "just a blip", "err") == "err"       # service miss -> unchanged
+assert _apply_overrides("noisy.svc", "blip", "debug") == "debug"          # never raises
+client.post("/watchtower/overrides", json={"action": "delete", "id": _ov[0]["id"]}, headers=AUTH)
+assert client.post("/watchtower/overrides", json={}, headers=AUTH).json()["overrides"] == []
+assert "host_errors" in client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()
+assert client.post("/watchtower/devices/command", json={"device_id": "kitchen-pi", "cmd": "refresh-guests"}, headers=AUTH).json()["queued"] == 1
+print("  ok  severity overrides lower logs + host_errors + refresh-guests command")
 
 # ---- printer WebSocket registers as the print target; /status shows online + print delivers ----
 psec = client.post("/watchtower/devices/create", json={"device_id": "printer1", "name": "Printer"}, headers=AUTH).json()["secret"]

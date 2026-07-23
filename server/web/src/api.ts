@@ -140,6 +140,18 @@ export const selectCamera = (device: string, node: string, selected: boolean) =>
 /** MJPEG stream URL for a scout camera. Token rides the query since an <img> sends no headers. */
 export const cameraStreamUrl = (device: string, node: string) =>
   `/watchtower/camera/stream?device=${encodeURIComponent(device)}&node=${encodeURIComponent(node)}&token=${encodeURIComponent(getToken() ?? '')}`
+/** Single-frame thumbnail URL for the Cameras grid. */
+export const cameraSnapshotUrl = (device: string, node: string) =>
+  `/watchtower/camera/snapshot?device=${encodeURIComponent(device)}&node=${encodeURIComponent(node)}&token=${encodeURIComponent(getToken() ?? '')}`
+
+export interface SevOverride { id: string; service: string; match: string; severity: string }
+export const listOverrides = () => post<{ overrides: SevOverride[] }>('/watchtower/overrides', {})
+export const addOverride = (service: string, match: string, severity: string) =>
+  post<{ overrides: SevOverride[] }>('/watchtower/overrides', { action: 'add', service, match, severity })
+export const deleteOverride = (id: string) =>
+  post<{ overrides: SevOverride[] }>('/watchtower/overrides', { action: 'delete', id })
+export const refreshGuests = (device_id: string) =>
+  post<{ queued: number }>('/watchtower/devices/command', { device_id, cmd: 'refresh-guests' })
 export const metricsSeries = (hours: number) =>
   post<{ start: number; width: number; buckets: number; err: number[]; other: number[] }>('/watchtower/metrics', { hours })
 export const testEmail = () => post<{ ok: boolean; message: string }>('/config/test-email', {})

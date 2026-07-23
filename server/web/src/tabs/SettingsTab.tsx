@@ -43,6 +43,16 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
     if (d) setPasskeys(d.passkeys)
   }, [guard])
 
+  const [overrides, setOverrides] = useState<api.SevOverride[]>([])
+  const loadOverrides = useCallback(async () => {
+    const d = await guard(api.listOverrides())
+    if (d) setOverrides(d.overrides)
+  }, [guard])
+  async function removeOverride(id: string) {
+    const d = await guard(api.deleteOverride(id))
+    if (d) setOverrides(d.overrides)
+  }
+
   const load = useCallback(async () => {
     const d = await guard(api.getConfig())
     if (d) {
@@ -57,7 +67,8 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
       setMqttC(d.mqtt_client || EMPTY_MQTT_CLIENT)
     }
     loadPasskeys()
-  }, [guard, loadPasskeys])
+    loadOverrides()
+  }, [guard, loadPasskeys, loadOverrides])
   useEffect(() => { load() }, [load])
 
   // Live MQTT-client link status so "Connecting…" reflects reality.
@@ -352,6 +363,29 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           <button className="ghost" style={{ flex: '0 0 auto' }} onClick={doRestart} disabled={updating}>Restart service</button>
         </div>
         {updateLog !== null && <pre className="updatelog mono">{updateLog}</pre>}
+      </div>
+
+      <div className="card">
+        <h2>Lowered severities</h2>
+        <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
+          Rules that downgrade noisy log messages at ingest (so they stop printing and alerting).
+          Create one from any log in the Logs tab (its detail → "lower severity").
+        </p>
+        {overrides.length === 0
+          ? <div className="muted" style={{ fontSize: 12 }}>None. Lower a message from the Logs tab to add one.</div>
+          : <div className="scroll"><table>
+              <thead><tr><th>Service</th><th>Message contains</th><th>→ Severity</th><th /></tr></thead>
+              <tbody>
+                {overrides.map((o) => (
+                  <tr key={o.id}>
+                    <td className="mono">{o.service || 'any'}</td>
+                    <td className="msg">{o.match || '(any)'}</td>
+                    <td><span className="pill ok">{o.severity}</span></td>
+                    <td><button className="ghost mini" onClick={() => removeOverride(o.id)}>Remove</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table></div>}
       </div>
 
       <div className="card">

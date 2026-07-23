@@ -83,25 +83,29 @@ function HostMetrics({ m }: { m: Record<string, unknown> }) {
   )
 }
 
-function ProxmoxGuests({ guests }: { guests: Guest[] }) {
+function ProxmoxGuests({ guests, hostErrors }: { guests: Guest[]; hostErrors?: Record<string, number> }) {
   const up = guests.filter((g) => g.status === 'running').length
   return (
     <div className="dev-section">
       <div className="dev-label">proxmox guests · {up}/{guests.length} up</div>
       <div className="guests">
-        {guests.map((g) => (
-          <span key={`${g.kind}${g.vmid}`} className="guest" title={`${g.kind} ${g.vmid} · ${g.status}`}>
-            <span className={`dot ${g.status === 'running' ? 'on' : 'off'}`} />
-            {g.name}<span className="muted"> {g.kind}{g.vmid}</span>
-          </span>
-        ))}
+        {guests.map((g) => {
+          const errs = hostErrors?.[g.name] || 0
+          return (
+            <span key={`${g.kind}${g.vmid}`} className="guest" title={`${g.kind} ${g.vmid} · ${g.status}`}>
+              <span className={`dot ${g.status === 'running' ? 'on' : 'off'}`} />
+              {g.name}<span className="muted"> {g.kind}{g.vmid}</span>
+              {errs > 0 && <span className="pill bad" style={{ marginLeft: 'auto' }}>{errs} err 24h</span>}
+            </span>
+          )
+        })}
       </div>
     </div>
   )
 }
 
 export function DeviceCard(
-  { d, counts, actions }: { d: Device; counts: SevCounts; actions?: DeviceActions },
+  { d, counts, actions, hostErrors }: { d: Device; counts: SevCounts; actions?: DeviceActions; hostErrors?: Record<string, number> },
 ) {
   const online = d.agent_online || (!!d.last_seen_at && Date.now() / 1000 - d.last_seen_at < 120)
   const isPrinter = d.meta?.role === 'printer'
@@ -134,7 +138,7 @@ export function DeviceCard(
         : <HostMetrics m={metrics} />}
       <div className="sevs"><SevPills sevs={counts[d.id] || {}} /></div>
 
-      {guests && guests.length > 0 && <ProxmoxGuests guests={guests} />}
+      {guests && guests.length > 0 && <ProxmoxGuests guests={guests} hostErrors={hostErrors} />}
 
       {ctl && cameras.length > 0 && (
         <div className="dev-section">

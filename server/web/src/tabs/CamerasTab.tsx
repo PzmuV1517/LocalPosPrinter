@@ -98,6 +98,18 @@ function FocusedCamera({ feed, onClose }: { feed: Feed; onClose: () => void }) {
   )
 }
 
+/** Still thumbnail for a grid tile: one cached/briefly-captured frame, glyph if offline or none. */
+function Thumb({ feed }: { feed: Feed }) {
+  const [failed, setFailed] = useState(false)
+  if (!feed.online || failed) return <div className="cam-thumb"><span className="cam-glyph">▣</span></div>
+  return (
+    <div className="cam-thumb">
+      <img src={api.cameraSnapshotUrl(feed.device.id, feed.cam.node)} alt={feed.cam.name}
+        loading="lazy" onError={() => setFailed(true)} />
+    </div>
+  )
+}
+
 export function CamerasTab({ onUnauthorized }: { onUnauthorized: () => void }) {
   const guard = useGuard(onUnauthorized)
   const [devices, setDevices] = useState<Device[]>([])
@@ -124,7 +136,7 @@ export function CamerasTab({ onUnauthorized }: { onUnauthorized: () => void }) {
             {list.map((f) => (
               <button key={`${f.device.id}|${f.cam.node}`} className="cam-tile" onClick={() => setFocus(f)}
                 disabled={!f.online} title={f.online ? 'Click to view' : 'Device offline'}>
-                <div className="cam-thumb"><span className="cam-glyph">▣</span></div>
+                <Thumb feed={f} />
                 <div className="cam-meta">
                   <div className="cam-name">{f.cam.name}</div>
                   <div className="muted">

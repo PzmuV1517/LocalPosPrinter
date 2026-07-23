@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import * as api from '../api'
-import { CopyButton, DeviceCard, useGuard } from '../common'
+import { CopyButton, DeviceCard, useGuard, useInterval } from '../common'
 import type { Device, SevCounts } from '../types'
 
 const installLine = (id: string) =>
@@ -39,6 +39,7 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
   const guard = useGuard(onUnauthorized)
   const [devices, setDevices] = useState<Device[]>([])
   const [counts, setCounts] = useState<SevCounts>({})
+  const [hostErrors, setHostErrors] = useState<Record<string, number>>({})
   const [newId, setNewId] = useState('')
   const [newName, setNewName] = useState('')
   const [issued, setIssued] = useState<{ id: string; secret: string } | null>(null)
@@ -46,9 +47,17 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
 
   const load = useCallback(async () => {
     const res = await guard(api.getLogs({ limit: 1 }))
-    if (res) { setDevices(res.devices); setCounts(res.counts) }
+    if (res) { setDevices(res.devices); setCounts(res.counts); setHostErrors(res.host_errors || {}) }
   }, [guard])
   useEffect(() => { load() }, [load])
+  useInterval(load, 300000)  // auto-pick-up new hosts/guests every 5 min
+
+  // Ask every Proxmox scout to re-scan its guests now, then reload (for the impatient).
+  async function checkHosts() {
+    const pve = devices.filter((d) => (d.meta?.proxmox as { guests?: unknown })?.guests)
+    await Promise.all(pve.map((d) => guard(api.refreshGuests(d.id))))
+    setTimeout(load, 1500)
+  }
 
   async function create() {
     if (!newId.trim()) return
@@ -110,11 +119,14 @@ export function DevicesTab({ onUnauthorized }: { onUnauthorized: () => void }) {
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0 }}>Registered devices</h2>
-          <button className="ghost mini" onClick={updateAll}>Update all scouts</button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="ghost mini" onClick={checkHosts}>Check for hosts</button>
+            <button className="ghost mini" onClick={updateAll}>Update all scouts</button>
+          </div>
         </div>
         <div className="cards" style={{ marginTop: 12, gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))' }}>
           {devices.length
-            ? devices.map((d) => <DeviceCard key={d.id} d={d} counts={counts}
+            ? devices.map((d) => <DeviceCard key={d.id} d={d} counts={counts} hostErrors={hostErrors}
               actions={{
                 onRotate: () => rotate(d.id), onRevoke: () => revoke(d.id), onDelete: () => del(d.id),
                 onUpdate: () => update(d.id), onPing: () => ping(d.id), onRestart: () => restartAgent(d.id),

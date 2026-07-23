@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api'
-import { DeviceCard, fmtTime, useGuard, useInterval } from '../common'
+import { DeviceCard, fmtTime, useGuard, useInterval, SEV_ORDER } from '../common'
 import type { LogsResponse, LogRow, Severity } from '../types'
 
 const POLL_MS = 2000 // faster than before (was 5000)
@@ -24,7 +24,11 @@ function ErrorRateChart({ s }: { s: Series }) {
   )
 }
 
-function LogModal({ log, onClose }: { log: LogRow; onClose: () => void }) {
+function LogModal({ log, onClose, onLower }: {
+  log: LogRow; onClose: () => void; onLower: (target: string) => void
+}) {
+  const lower = SEV_ORDER.slice(SEV_ORDER.indexOf(log.severity) + 1)
+  const [target, setTarget] = useState<string>(lower[0] || 'info')
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -44,6 +48,22 @@ function LogModal({ log, onClose }: { log: LogRow; onClose: () => void }) {
           <div className="muted" style={{ marginTop: 10 }}>meta</div>
           <pre>{JSON.stringify(log.meta, null, 2)}</pre>
         </>}
+        {lower.length > 0 && (
+          <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            <div className="muted">lower severity of messages like this</div>
+            <div className="row" style={{ alignItems: 'flex-end', marginTop: 6 }}>
+              <div style={{ flex: '0 0 auto' }}>
+                <select value={target} onChange={(e) => setTarget(e.target.value)}>
+                  {lower.map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <button className="ghost mini" style={{ flex: '0 0 auto' }} onClick={() => onLower(target)}>Apply</button>
+            </div>
+            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+              future logs from "{log.service || 'any'}" containing this message get severity {target}. Manage in Settings.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -83,6 +103,10 @@ export function LogsTab({ onUnauthorized }: { onUnauthorized: () => void }) {
   useInterval(loadChart, 30000, true)
 
   async function print(id: number) { await guard(api.printLog(id)); load() }
+  async function lower(log: LogRow, target: string) {
+    await guard(api.addOverride(log.service, log.message, target))
+    setSelected(null); load()
+  }
 
   const logs = data?.logs ?? []
   return (
@@ -91,7 +115,7 @@ export function LogsTab({ onUnauthorized }: { onUnauthorized: () => void }) {
         <h2>Devices</h2>
         <div className="cards">
           {data && data.devices.length
-            ? data.devices.map((d) => <DeviceCard key={d.id} d={d} counts={data.counts} />)
+            ? data.devices.map((d) => <DeviceCard key={d.id} d={d} counts={data.counts} hostErrors={data.host_errors} />)
             : <div className="muted" style={{ fontSize: 12 }}>No devices yet, issue a secret in the Devices tab.</div>}
         </div>
       </div>
@@ -141,7 +165,7 @@ export function LogsTab({ onUnauthorized }: { onUnauthorized: () => void }) {
         <div className="muted" style={{ marginTop: 8, fontSize: 11 }}>{logs.length} shown{stamp && ` · ${stamp}`} · click a row for detail</div>
       </div>
 
-      {selected && <LogModal log={selected} onClose={() => setSelected(null)} />}
+      {selected && <LogModal log={selected} onClose={() => setSelected(null)} onLower={(t) => lower(selected, t)} />}
     </>
   )
 }

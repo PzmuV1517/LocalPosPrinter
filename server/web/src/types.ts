@@ -34,6 +34,7 @@ export interface LogsResponse {
   logs: LogRow[]
   devices: Device[]
   counts: SevCounts
+  host_errors?: Record<string, number>
   device_connected: boolean
 }
 

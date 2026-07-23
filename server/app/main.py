@@ -1287,6 +1287,39 @@ def _log_to_alert_payload(device_id: str, severity: str, service: str, message: 
     }
 
 
+# Severity overrides: operator rules that lower the severity of matching (noisy) log messages at
+# ingest, so a service that cries `err` over nothing stops printing and alerting. Managed in
+# Settings; created from a log in the Logs tab. Stored as JSON in config (small, rarely changes).
+def _load_overrides() -> list:
+    try:
+        return json.loads(db.get_config("severity_overrides", "[]")) or []
+    except (ValueError, TypeError):
+        return []
+
+
+def _save_overrides(rules: list) -> None:
+    db.set_config("severity_overrides", json.dumps(rules))
+
+
+def _apply_overrides(service: str, message: str, severity: str) -> str:
+    """Lower `severity` to a rule's target when its (optional) service matches and its substring is
+    in the message. Only ever lowers, never raises."""
+    for r in _load_overrides():
+        svc = (r.get("service") or "").strip()
+        if svc and svc != service:
+            continue
+        match = r.get("match") or ""
+        if match and match not in message:
+            continue
+        target = r.get("severity")
+        if target in SEVERITY_NAMES and sev_num(target) > sev_num(severity):
+            severity = target
+    return severity
+
+
+SEVERITY_NAMES = ("emerg", "alert", "crit", "err", "warning", "notice", "info", "debug")
+
+
 # Low-battery alerts for a printer. Each threshold fires once as the level crosses it going down,
 # then re-arms when the battery recovers back above it (charging / battery swap), so a printer
 # sitting at a low level doesn't re-alert every status frame.
@@ -1662,6 +1695,7 @@ async def ingest(request: Request) -> JSONResponse:
     meta = body.get("meta") if isinstance(body.get("meta"), dict) else {}
     # Forwarded logs / command output set no_print so they don't spew paper.
     no_print = bool(body.get("no_print") or body.get("auto_print") is False)
+    severity = _apply_overrides(service, message, severity)  # operator noise-suppression rules
 
     should_print = sev_num(severity) <= auto_print_max_num() and not no_print
     printed = False
@@ -1697,11 +1731,13 @@ class CamChannel:
         self.viewers = 0
         self.pushing = False
         self.start_ts = 0.0
+        self.frame_ts = 0.0
         self.event = asyncio.Event()
 
     def set_frame(self, data: bytes) -> None:
         self.frame = data
         self.seq += 1
+        self.frame_ts = time.time()
         ev, self.event = self.event, asyncio.Event()
         ev.set()
 
@@ -1768,6 +1804,35 @@ async def camera_stream(request: Request):
     # X-Accel-Buffering: no tells nginx not to buffer the feed, so frames reach the browser live.
     return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame",
                              headers={**_NO_CACHE, "X-Accel-Buffering": "no"})
+
+
+@app.get("/watchtower/camera/snapshot")
+async def camera_snapshot(request: Request):
+    """One still frame for the Cameras grid thumbnails: returns the last cached frame if recent,
+    else briefly captures one (registers a transient viewer so the scout starts, waits for a fresh
+    frame, then releases so capture stops). Keeps idle tiles showing a picture, not a blank."""
+    if not auth.verify_session(request.query_params.get("token")):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    device = (request.query_params.get("device") or "").strip()
+    node = (request.query_params.get("node") or "").strip()
+    if not device or not node:
+        return JSONResponse({"error": "device and node required"}, status_code=400)
+    ch = _channel(device, node)
+    if ch.frame and time.time() - ch.frame_ts < 120:
+        return Response(content=ch.frame, media_type="image/jpeg", headers=_NO_CACHE)
+    start = ch.seq
+    ch.viewers += 1
+    _ensure_pushing(device, node, ch)
+    try:
+        for _ in range(100):  # up to ~10s for the first fresh frame
+            if ch.seq != start:
+                break
+            await asyncio.sleep(0.1)
+    finally:
+        ch.viewers -= 1
+    if ch.frame:
+        return Response(content=ch.frame, media_type="image/jpeg", headers=_NO_CACHE)
+    return Response(status_code=503)
 
 
 @app.post("/agent/camera/push")
@@ -1856,8 +1921,29 @@ async def watchtower_logs(request: Request) -> JSONResponse:
         d["agent_online"] = agents.online(d["id"])
     return JSONResponse(
         {"logs": logs, "devices": devices, "counts": db.severity_counts(),
-         "device_connected": relay.is_connected()}
+         "host_errors": db.host_error_counts(), "device_connected": relay.is_connected()}
     )
+
+
+@app.post("/watchtower/overrides")
+async def watchtower_overrides(request: Request) -> JSONResponse:
+    """Manage severity-lowering rules (list / add / delete). Created from a log, managed in Settings."""
+    _, body = await _read(request)
+    if not _authed_admin(request, body):
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    rules = _load_overrides()
+    action = body.get("action")
+    if action == "add":
+        target = body.get("severity")
+        if target not in SEVERITY_NAMES:
+            return JSONResponse({"error": "bad severity"}, status_code=400)
+        rules.append({"id": secrets.token_hex(4), "service": (body.get("service") or "").strip(),
+                      "match": (body.get("match") or "").strip(), "severity": target})
+        _save_overrides(rules)
+    elif action == "delete":
+        rules = [r for r in rules if r.get("id") != body.get("id")]
+        _save_overrides(rules)
+    return JSONResponse({"overrides": rules})
 
 
 @app.post("/watchtower/print")
@@ -1930,7 +2016,7 @@ async def watchtower_devices_update(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "queued": n})
 
 
-_AGENT_CMDS = {"ping", "restart"}
+_AGENT_CMDS = {"ping", "restart", "refresh-guests"}
 
 
 @app.post("/watchtower/devices/command")
