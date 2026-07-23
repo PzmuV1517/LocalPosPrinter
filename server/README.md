@@ -161,11 +161,19 @@ Set these in `~/.config/scout/scout.env` (then `systemctl --user restart scout-a
 SCOUT_FORWARD_JOURNALD=1                       # tail journald and ship entries
 SCOUT_FORWARD_MIN_SEV=warning                  # only warning+ (journald is noisy)
 SCOUT_FORWARD_FILES=/var/log/nginx/error.log:err,/var/log/app.log:warning
+SCOUT_FORWARD_SYSLOG=1                          # receive syslog over UDP (SCOUT_SYSLOG_PORT, default 514)
 SCOUT_FORWARD_NO_PRINT=1                        # forwarded logs never auto-print (default)
 ```
 
 journald PRIORITY maps to severity; the service name is the systemd unit. (Reading journald may
-need the user in the `systemd-journal` group.)
+need the user in the `systemd-journal` group.) With `SCOUT_FORWARD_SYSLOG=1` the scout also accepts
+syslog from other machines (each just points rsyslog at it: `*.err @host:514`), tagged by sender, so
+one scout can collect a whole fleet.
+
+**Proxmox:** the install one-liner detects a Proxmox node and, as root, does all of the above
+automatically, runs the scout as a system service, points every running LXC at it, and reports the
+node's VM/LXC inventory (shown on its card in the Devices tab). VMs need one rsyslog line each (the
+installer prints it).
 
 ## Alerts, notifications & observability (dashboard)
 

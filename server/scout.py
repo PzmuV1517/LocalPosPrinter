@@ -44,7 +44,7 @@ import time
 import urllib.request
 
 SEVERITIES = ["emerg", "alert", "crit", "err", "warning", "notice", "info", "debug"]
-SCOUT_VERSION = "2.4.0"
+SCOUT_VERSION = "2.5.0"
 
 # journald PRIORITY (syslog) -> our severity names.
 _JOURNAL_SEV = {0: "emerg", 1: "alert", 2: "crit", 3: "err", 4: "warning", 5: "notice", 6: "info", 7: "debug"}
@@ -112,6 +112,34 @@ def _detect_cameras() -> list:
 
 _CAMS: dict = {}          # node -> capture thread, so a camera is only streamed once
 _CAMS_LOCK = threading.Lock()
+
+_PVE_CACHE: dict = {"ts": 0.0, "data": None}
+
+
+def _proxmox_info():
+    """VM/LXC inventory on a Proxmox node (id, name, kind, status), so the dashboard can show what
+    the node hosts, not just the host itself. Cached 60s (pvesh spawns perl). None off Proxmox."""
+    if not os.path.isdir("/etc/pve"):
+        return None
+    now = time.time()
+    if _PVE_CACHE["data"] is not None and now - _PVE_CACHE["ts"] < 60:
+        return _PVE_CACHE["data"]
+    import subprocess
+    guests = []
+    try:
+        out = subprocess.run(["pvesh", "get", "/cluster/resources", "--type", "vm",
+                              "--output-format", "json"], capture_output=True, text=True, timeout=15)
+        for r in json.loads(out.stdout or "[]"):
+            if r.get("type") in ("qemu", "lxc"):
+                guests.append({"vmid": r.get("vmid"),
+                               "name": r.get("name") or str(r.get("vmid") or "?"),
+                               "kind": "vm" if r.get("type") == "qemu" else "ct",
+                               "status": r.get("status") or "unknown"})
+    except Exception:
+        pass
+    guests.sort(key=lambda g: g.get("vmid") or 0)
+    _PVE_CACHE.update(ts=now, data={"guests": guests})
+    return _PVE_CACHE["data"]
 
 
 def _camera_stream(scout: "Scout", node: str, token: str, fps: int, size: str) -> None:
@@ -272,8 +300,12 @@ class Scout:
         The poll itself is the heartbeat that keeps this device shown as online, and carries
         host health metrics for the dashboard."""
         path = "/agent/poll"
-        body = json.dumps({"version": SCOUT_VERSION, "host": host, "metrics": _collect_metrics(),
-                           "cameras": _detect_cameras()}).encode()
+        payload = {"version": SCOUT_VERSION, "host": host, "metrics": _collect_metrics(),
+                   "cameras": _detect_cameras()}
+        pve = _proxmox_info()
+        if pve:
+            payload["proxmox"] = pve
+        body = json.dumps(payload).encode()
         req = urllib.request.Request(self.url + path, data=body, method="POST",
                                      headers=self._sign("POST", path, body))
         with urllib.request.urlopen(req, timeout=timeout) as resp:

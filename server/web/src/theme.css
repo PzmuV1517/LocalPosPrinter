@@ -131,6 +131,11 @@ nav.tabs button::before, nav.tabs button::after { content:none; }
 .cam-pick-name { flex:0 0 auto; }
 .cam-pick .mono { font-size:10px; margin-left:auto; }
 
+/* Proxmox guest inventory on a scout card */
+.guests { display:flex; flex-direction:column; gap:4px; }
+.guest { font-size:12px; display:flex; align-items:center; }
+.guest .muted { font-size:10px; margin-left:5px; }
+
 /* Cameras tab grid */
 .cam-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; margin-top:12px; }
 .cam-tile { display:flex; flex-direction:column; gap:0; padding:0; text-align:left; background:var(--surface2);

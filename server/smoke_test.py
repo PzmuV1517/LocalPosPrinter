@@ -244,6 +244,12 @@ sel = client.post("/watchtower/camera/select", json={"device": "kitchen-pi", "no
 assert sel.json()["cameras_selected"] == ["/dev/video0"]
 cam_poll()  # selection must survive the next heartbeat (poll meta merge must not wipe it)
 assert kitchen()["meta"]["cameras_selected"] == ["/dev/video0"]
+# proxmox guest inventory rides the poll and lands in device meta
+pbody = json.dumps({"version": "2.5.0", "host": "h",
+                    "proxmox": {"guests": [{"vmid": 100, "name": "web", "kind": "ct", "status": "running"}]}}).encode()
+client.post("/watchtower/devices/command", json={"device_id": "kitchen-pi", "cmd": "ping"}, headers=AUTH)
+client.post("/agent/poll", data=pbody, headers=sign("POST", "/agent/poll", pbody))
+assert kitchen()["meta"]["proxmox"]["guests"][0]["name"] == "web"
 assert client.post("/agent/camera/push?token=bogus", content=b"x").status_code == 403
 assert client.get("/watchtower/camera/stream?device=kitchen-pi&node=/dev/video0&token=bad").status_code == 401
 print("  ok  cameras reported + selection persists across polls + push/stream auth gated")

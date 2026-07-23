@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Unauthorized } from './api'
-import type { Camera, Device, SevCounts, Severity } from './types'
+import type { Camera, Device, Guest, SevCounts, Severity } from './types'
 
 /** Wrap API calls so a 401 (expired/invalid token) bounces to the login gate. */
 export function useGuard(onUnauthorized: () => void) {
@@ -83,6 +83,23 @@ function HostMetrics({ m }: { m: Record<string, unknown> }) {
   )
 }
 
+function ProxmoxGuests({ guests }: { guests: Guest[] }) {
+  const up = guests.filter((g) => g.status === 'running').length
+  return (
+    <div className="dev-section">
+      <div className="dev-label">proxmox guests · {up}/{guests.length} up</div>
+      <div className="guests">
+        {guests.map((g) => (
+          <span key={`${g.kind}${g.vmid}`} className="guest" title={`${g.kind} ${g.vmid} · ${g.status}`}>
+            <span className={`dot ${g.status === 'running' ? 'on' : 'off'}`} />
+            {g.name}<span className="muted"> {g.kind}{g.vmid}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function DeviceCard(
   { d, counts, actions }: { d: Device; counts: SevCounts; actions?: DeviceActions },
 ) {
@@ -96,6 +113,7 @@ export function DeviceCard(
   const metrics = (d.meta?.metrics as Record<string, unknown>) || {}
   const cameras = (d.meta?.cameras as Camera[]) || []
   const selected = (d.meta?.cameras_selected as string[]) || []
+  const guests = (d.meta?.proxmox as { guests?: Guest[] } | undefined)?.guests
   const ctl = actions && !d.revoked && !isPrinter
   return (
     <div className="device">
@@ -115,6 +133,8 @@ export function DeviceCard(
       {isPrinter ? (serial && <div className="muted" style={{ fontSize: 11 }}>serial {serial}</div>)
         : <HostMetrics m={metrics} />}
       <div className="sevs"><SevPills sevs={counts[d.id] || {}} /></div>
+
+      {guests && guests.length > 0 && <ProxmoxGuests guests={guests} />}
 
       {ctl && cameras.length > 0 && (
         <div className="dev-section">

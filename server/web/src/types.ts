@@ -15,6 +15,7 @@ export interface LogRow {
 }
 
 export interface Camera { node: string; name: string }
+export interface Guest { vmid: number; name: string; kind: 'vm' | 'ct'; status: string }
 
 export interface Device {
   id: string

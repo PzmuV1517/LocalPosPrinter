@@ -394,6 +394,58 @@ conf_set() { tmp=$(mktemp); grep -v "^$1=" "$CONF" 2>/dev/null > "$tmp"; echo "$
 conf_get() { grep "^$1=" "$CONF" 2>/dev/null | head -1 | cut -d= -f2-; }
 ask_yn() { p="$1"; d="$2"; a=""; printf "%s " "$p" > "$TTY"; read a < "$TTY" 2>/dev/null; a="${a:-$d}"; case "$a" in [Yy]*) return 0;; *) return 1;; esac; }
 
+is_proxmox() { command -v pveversion >/dev/null 2>&1 || [ -d /etc/pve ]; }
+
+# On a Proxmox node: forward the host journal AND stand up a syslog receiver, run as a root system
+# service (full journal + privileged port 514), and point every running LXC at it. One scout, whole
+# node (host + all guests) into Watchtower's error log.
+setup_proxmox() {
+  echo ""
+  echo "Proxmox detected. Configuring node-wide log collection (host + all VMs/LXCs)..."
+  conf_set SCOUT_FORWARD_JOURNALD 1
+  conf_set SCOUT_FORWARD_SYSLOG 1
+  [ -z "$(conf_get SCOUT_FORWARD_MIN_SEV)" ] && conf_set SCOUT_FORWARD_MIN_SEV err
+  [ -z "$(conf_get SCOUT_FORWARD_NO_PRINT)" ] && conf_set SCOUT_FORWARD_NO_PRINT 1
+
+  systemctl --user disable --now scout-agent >/dev/null 2>&1 || true
+  cat > /etc/systemd/system/scout-agent.service <<UNIT
+[Unit]
+Description=Watchtower Scout (Proxmox)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=$CONF
+ExecStart=/usr/bin/python3 $LIB/scout.py agent
+Restart=always
+RestartSec=3
+User=root
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable --now scout-agent && echo "  scout-agent system service running."
+
+  HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+  LINE="*.err  @$HOST_IP:514"
+  n=0
+  for id in $(pct list 2>/dev/null | awk 'NR>1 && $2=="running"{print $1}'); do
+    if pct exec "$id" -- sh -c "command -v rsyslogd >/dev/null 2>&1 || { apt-get update -qq && apt-get install -y rsyslog >/dev/null 2>&1; }; printf '%s\n' '$LINE' > /etc/rsyslog.d/90-watchtower.conf; systemctl restart rsyslog >/dev/null 2>&1 || service rsyslog restart >/dev/null 2>&1" 2>/dev/null; then
+      echo "  CT $id -> forwarding errors"; n=$((n+1))
+    else
+      echo "  CT $id -> skipped (no network for apt, or no systemd/rsyslog)"
+    fi
+  done
+  echo "  configured $n running container(s)."
+  echo ""
+  echo "VMs are separate OSes; inside each VM run:"
+  echo "  echo '$LINE' | sudo tee /etc/rsyslog.d/90-watchtower.conf && sudo systemctl restart rsyslog"
+  if pve-firewall status 2>/dev/null | grep -qi enabled; then
+    echo "NOTE: Proxmox firewall is on; allow inbound UDP 514 from the guest subnet or guest logs won't arrive."
+  fi
+}
+
 if [ "$have_tty" = "1" ]; then
   echo ""
   if [ -z "$(conf_get SCOUT_DEVICE_ID)" ]; then
@@ -409,7 +461,15 @@ if [ "$have_tty" = "1" ]; then
       "$BIN/scout" -s info --service setup "scout installed on $(hostname)" >/dev/null 2>&1 \
         && echo "Test log sent, check the dashboard's Logs tab." || echo "Could not reach the server for the test."
     fi
-    if ask_yn "Run scout as an always-on background service so it stays online? [Y/n]" Y; then
+    if is_proxmox; then
+      if [ "$(id -u)" = "0" ]; then
+        setup_proxmox
+      else
+        echo ""
+        echo "Proxmox detected but not running as root. Re-run this installer as root to auto-configure"
+        echo "node-wide logging (host + all VMs/LXCs)."
+      fi
+    elif ask_yn "Run scout as an always-on background service so it stays online? [Y/n]" Y; then
       "$BIN/scout" install-service
       if ask_yn "Keep it running after you log out (enable linger)? [Y/n]" Y; then
         loginctl enable-linger "$USER" 2>/dev/null && echo "Linger enabled." \
@@ -423,13 +483,21 @@ if [ "$have_tty" = "1" ]; then
     echo "No secret set. When you have it:  $BIN/scout set-secret <SECRET>  then  $BIN/scout install-service"
   fi
 else
-  # No terminal (piped non-interactively), print the manual steps.
-  echo ""
-  echo "Finish setup:"
-  [ -z "$DEVICE_ID" ] && echo "  $BIN/scout set-device <DEVICE_ID>"
-  echo "  $BIN/scout set-secret <SECRET>"
-  echo "  $BIN/scout install-service        # run as a background service"
-  echo "  loginctl enable-linger \"$USER\"   # keep it running after logout"
+  # No terminal (piped non-interactively). Auto-finish a Proxmox node if the secret is already set.
+  if is_proxmox && [ "$(id -u)" = "0" ] && [ -n "$(conf_get SCOUT_SECRET)" ]; then
+    setup_proxmox
+  else
+    echo ""
+    echo "Finish setup:"
+    [ -z "$DEVICE_ID" ] && echo "  $BIN/scout set-device <DEVICE_ID>"
+    echo "  $BIN/scout set-secret <SECRET>"
+    if is_proxmox; then
+      echo "  # then re-run this installer as root to auto-configure node-wide logging"
+    else
+      echo "  $BIN/scout install-service        # run as a background service"
+      echo "  loginctl enable-linger \"$USER\"   # keep it running after logout"
+    fi
+  fi
 fi
 
 if [ "$ONPATH" = "0" ]; then
@@ -1540,6 +1608,8 @@ async def agent_poll(request: Request) -> JSONResponse:
         meta["metrics"] = metrics  # cpu/mem/disk/temp, shown on the device card
     if isinstance(body.get("cameras"), list):
         meta["cameras"] = body["cameras"]  # webcams the scout can stream
+    if isinstance(body.get("proxmox"), dict):
+        meta["proxmox"] = body["proxmox"]  # VM/LXC inventory on a Proxmox node
     if meta:
         # Merge, don't replace: keep operator-set keys (e.g. cameras_selected) the poll never sends.
         merged = db.device_meta(device_id)
