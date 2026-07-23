@@ -18,6 +18,7 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
   const [cfg, setCfg] = useState({
     print_width: 384, auto_print_min_sev: 'err' as Severity, auto_print_max_per_min: 30,
     log_retention_days: 30, err_retention_days: 0, disk_alert_pct: 90,
+    burst_threshold: 20, burst_window_secs: 10, burst_summary_secs: 30,
   })
   const [cfgMsg, setCfgMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [user, setUser] = useState('')
@@ -60,6 +61,8 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
         print_width: d.print_width, auto_print_min_sev: d.auto_print_min_sev,
         auto_print_max_per_min: d.auto_print_max_per_min, log_retention_days: d.log_retention_days,
         err_retention_days: d.err_retention_days, disk_alert_pct: d.disk_alert_pct,
+        burst_threshold: d.burst_threshold, burst_window_secs: d.burst_window_secs,
+        burst_summary_secs: d.burst_summary_secs,
       })
       setUser(d.username)
       setNotify(d.notify || EMPTY_NOTIFY)
@@ -198,6 +201,12 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
           <div><label>Log retention (days)</label><input type="number" value={cfg.log_retention_days} onChange={(e) => setCfg({ ...cfg, log_retention_days: +e.target.value })} /></div>
           <div><label>Error retention (days, 0=same)</label><input type="number" value={cfg.err_retention_days} onChange={(e) => setCfg({ ...cfg, err_retention_days: +e.target.value })} /></div>
           <div><label>Disk-full alert at % (0=off)</label><input type="number" value={cfg.disk_alert_pct} onChange={(e) => setCfg({ ...cfg, disk_alert_pct: +e.target.value })} /></div>
+        </div>
+        <label style={{ marginTop: 4 }}>Proxmox error-burst coalescing (one "multiple errors" summary instead of a flood)</label>
+        <div className="row">
+          <div><label>Burst at N errors (0=off)</label><input type="number" value={cfg.burst_threshold} onChange={(e) => setCfg({ ...cfg, burst_threshold: +e.target.value })} /></div>
+          <div><label>within window (s)</label><input type="number" value={cfg.burst_window_secs} onChange={(e) => setCfg({ ...cfg, burst_window_secs: +e.target.value })} /></div>
+          <div><label>summary every (s)</label><input type="number" value={cfg.burst_summary_secs} onChange={(e) => setCfg({ ...cfg, burst_summary_secs: +e.target.value })} /></div>
         </div>
         <div style={{ marginTop: 14 }}><button onClick={saveConfig}>Save configuration</button></div>
         {cfgMsg && <div className={`result ${cfgMsg.ok ? 'ok' : 'bad'}`}>{cfgMsg.text}</div>}

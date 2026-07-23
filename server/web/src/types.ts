@@ -97,6 +97,9 @@ export interface ServerConfig {
   log_retention_days: number
   err_retention_days: number
   disk_alert_pct: number
+  burst_threshold: number
+  burst_window_secs: number
+  burst_summary_secs: number
   notify: NotifySettings
   mqtt: MqttSettings
   mqtt_client: MqttClientSettings

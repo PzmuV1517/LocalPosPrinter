@@ -182,6 +182,18 @@ def disk_alert_pct() -> int:
     return db.get_int("disk_alert_pct", 90)  # 0 disables
 
 
+def burst_threshold() -> int:
+    return db.get_int("burst_threshold", 20)  # errors within the window to count as a burst; 0 = off
+
+
+def burst_window() -> int:
+    return db.get_int("burst_window_secs", 10)
+
+
+def burst_summary_secs() -> int:
+    return db.get_int("burst_summary_secs", 30)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -873,6 +885,9 @@ async def config_get(request: Request) -> JSONResponse:
             "log_retention_days": retention_days(),
             "err_retention_days": err_retention_days(),
             "disk_alert_pct": disk_alert_pct(),
+            "burst_threshold": burst_threshold(),
+            "burst_window_secs": burst_window(),
+            "burst_summary_secs": burst_summary_secs(),
             "notify": notifier.get_settings(),
             "mqtt": mqtt_bridge.get_settings(),
             "mqtt_client": mqtt_client.get_settings(),
@@ -897,6 +912,12 @@ async def config_set(request: Request) -> JSONResponse:
         db.set_config("err_retention_days", int(body["err_retention_days"]))
     if body.get("disk_alert_pct") is not None:
         db.set_config("disk_alert_pct", int(body["disk_alert_pct"]))
+    if body.get("burst_threshold") is not None:
+        db.set_config("burst_threshold", max(0, int(body["burst_threshold"])))
+    if body.get("burst_window_secs") is not None:
+        db.set_config("burst_window_secs", max(1, int(body["burst_window_secs"])))
+    if body.get("burst_summary_secs") is not None:
+        db.set_config("burst_summary_secs", max(1, int(body["burst_summary_secs"])))
     if isinstance(body.get("notify"), dict):
         notifier.save_settings(body["notify"])
     if isinstance(body.get("mqtt"), dict):
@@ -1687,10 +1708,8 @@ async def _fire_alert(device_id: str, severity: str, service: str, message: str)
 # "multiple errors" summary (per-source counts) instead. Every line still lands in the dashboard.
 # ---------------------------------------------------------------------------
 _proxmox_devices: set[str] = set()
-_BURST_WINDOW = 10.0        # seconds of history used to judge the rate
-_BURST_THRESHOLD = 20       # errors within the window == a burst
-_BURST_SUMMARY_EVERY = 30.0  # while bursting, emit at most one summary this often
 _BURST_QUIET = 8.0          # flush the final summary once errors stop for this long
+# The window / threshold / summary-interval are operator-tunable (Settings), see burst_* above.
 
 
 class _Burst:
@@ -1716,10 +1735,11 @@ def _note_error_burst(device_id: str, service: str) -> bool:
     now = time.time()
     b = _bursts.setdefault(device_id, _Burst())
     b.window.append(now)
-    while b.window and now - b.window[0] > _BURST_WINDOW:
+    while b.window and now - b.window[0] > burst_window():
         b.window.popleft()
     b.last_err_ts = now
-    if len(b.window) < _BURST_THRESHOLD:
+    threshold = burst_threshold()
+    if threshold <= 0 or len(b.window) < threshold:  # 0 disables coalescing
         return False
     src = _burst_source(service)
     b.pending[src] = b.pending.get(src, 0) + 1
@@ -1785,7 +1805,7 @@ async def ingest(request: Request) -> JSONResponse:
         if _note_error_burst(device_id, service):
             no_print = True
             b = _bursts[device_id]
-            if time.time() - b.last_summary_ts >= _BURST_SUMMARY_EVERY:
+            if time.time() - b.last_summary_ts >= burst_summary_secs():
                 await _emit_burst_summary(device_id, b)
 
     should_print = sev_num(severity) <= auto_print_max_num() and not no_print

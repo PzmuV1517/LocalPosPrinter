@@ -270,14 +270,21 @@ assert "host_errors" in client.post("/watchtower/logs", json={"limit": 1}, heade
 assert client.post("/watchtower/devices/command", json={"device_id": "kitchen-pi", "cmd": "refresh-guests"}, headers=AUTH).json()["queued"] == 1
 print("  ok  severity overrides lower logs + host_errors + refresh-guests command")
 
-# ---- proxmox error-burst detection: below threshold no burst, then a flood trips it ----
+# ---- proxmox error-burst detection: tunable threshold, below no burst, flood trips it ----
+client.post("/config/set", json={"burst_threshold": 20, "burst_window_secs": 10, "burst_summary_secs": 30}, headers=AUTH)
+cfg = client.post("/config/get", json={}, headers=AUTH).json()
+assert cfg["burst_threshold"] == 20 and cfg["burst_window_secs"] == 10 and cfg["burst_summary_secs"] == 30
 _m._bursts.clear()
-below = [_m._note_error_burst("pve1", "web01/nginx") for _ in range(_m._BURST_THRESHOLD - 1)]
+below = [_m._note_error_burst("pve1", "web01/nginx") for _ in range(19)]
 assert not any(below)  # under the threshold, each handled individually
 tripped = _m._note_error_burst("pve1", "db01/pg")
 assert tripped and _m._bursts["pve1"].pending_total == 1  # now bursting, accumulating a summary
 assert _m._note_error_burst("other", "x/y") is False  # a different (quiet) device is unaffected
-print("  ok  proxmox burst coalescer trips on a flood, accumulates per-source")
+client.post("/config/set", json={"burst_threshold": 0}, headers=AUTH)  # 0 disables
+_m._bursts.clear()
+assert not any(_m._note_error_burst("pve1", "x/y") for _ in range(30))
+client.post("/config/set", json={"burst_threshold": 20}, headers=AUTH)  # restore
+print("  ok  proxmox burst coalescer: tunable threshold, trips on flood, 0 disables")
 
 # ---- printer WebSocket registers as the print target; /status shows online + print delivers ----
 psec = client.post("/watchtower/devices/create", json={"device_id": "printer1", "name": "Printer"}, headers=AUTH).json()["secret"]
