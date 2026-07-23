@@ -1648,6 +1648,7 @@ async def agent_poll(request: Request) -> JSONResponse:
         meta["cameras"] = body["cameras"]  # webcams the scout can stream
     if isinstance(body.get("proxmox"), dict):
         meta["proxmox"] = body["proxmox"]  # VM/LXC inventory on a Proxmox node
+        _proxmox_devices.add(device_id)    # mark it for error-burst coalescing
     if meta:
         # Merge, don't replace: keep operator-set keys (e.g. cameras_selected) the poll never sends.
         merged = db.device_meta(device_id)
@@ -1680,6 +1681,86 @@ async def _fire_alert(device_id: str, severity: str, service: str, message: str)
     await _maybe_email(device_id, severity, service, message)
 
 
+# ---------------------------------------------------------------------------
+# Proxmox error-burst coalescer. A node forwards a whole fleet's logs, so a fault can dump hundreds
+# of errors at once. For Proxmox scouts only, a burst suppresses the individual prints and emits one
+# "multiple errors" summary (per-source counts) instead. Every line still lands in the dashboard.
+# ---------------------------------------------------------------------------
+_proxmox_devices: set[str] = set()
+_BURST_WINDOW = 10.0        # seconds of history used to judge the rate
+_BURST_THRESHOLD = 20       # errors within the window == a burst
+_BURST_SUMMARY_EVERY = 30.0  # while bursting, emit at most one summary this often
+_BURST_QUIET = 8.0          # flush the final summary once errors stop for this long
+
+
+class _Burst:
+    def __init__(self) -> None:
+        self.window: deque = deque()
+        self.pending: dict[str, int] = {}
+        self.pending_total = 0
+        self.first_ts = 0.0
+        self.last_err_ts = 0.0
+        self.last_summary_ts = 0.0
+
+
+_bursts: dict[str, _Burst] = {}
+_flusher_task = None
+
+
+def _burst_source(service: str) -> str:
+    return service.split("/", 1)[0] if "/" in service else (service or "unknown")
+
+
+def _note_error_burst(device_id: str, service: str) -> bool:
+    """Record an error from a Proxmox scout; return True if it falls inside a burst (suppress it)."""
+    now = time.time()
+    b = _bursts.setdefault(device_id, _Burst())
+    b.window.append(now)
+    while b.window and now - b.window[0] > _BURST_WINDOW:
+        b.window.popleft()
+    b.last_err_ts = now
+    if len(b.window) < _BURST_THRESHOLD:
+        return False
+    src = _burst_source(service)
+    b.pending[src] = b.pending.get(src, 0) + 1
+    b.pending_total += 1
+    if not b.first_ts:
+        b.first_ts = now
+    return True
+
+
+async def _emit_burst_summary(device_id: str, b: _Burst) -> None:
+    if b.pending_total <= 0:
+        return
+    span = max(1, int(b.last_err_ts - b.first_ts))
+    top = sorted(b.pending.items(), key=lambda kv: kv[1], reverse=True)[:6]
+    who = ", ".join(f"{s} ({c})" for s, c in top)
+    msg = f"multiple errors: {b.pending_total} in {span}s from {who}"
+    b.pending = {}
+    b.pending_total = 0
+    b.first_ts = 0.0
+    b.last_summary_ts = time.time()
+    await _fire_alert(device_id, "err", "burst", msg)
+
+
+async def _burst_flusher() -> None:
+    while True:
+        await asyncio.sleep(5)
+        now = time.time()
+        for device_id, b in list(_bursts.items()):
+            if b.pending_total > 0 and now - b.last_err_ts >= _BURST_QUIET:
+                try:
+                    await _emit_burst_summary(device_id, b)
+                except Exception as exc:
+                    log.error("Burst flush failed for %s: %s", device_id, exc)
+
+
+def _ensure_flusher() -> None:
+    global _flusher_task
+    if _flusher_task is None:
+        _flusher_task = asyncio.create_task(_burst_flusher())
+
+
 @app.post("/ingest")
 async def ingest(request: Request) -> JSONResponse:
     raw, body = await _read(request)
@@ -1696,6 +1777,16 @@ async def ingest(request: Request) -> JSONResponse:
     # Forwarded logs / command output set no_print so they don't spew paper.
     no_print = bool(body.get("no_print") or body.get("auto_print") is False)
     severity = _apply_overrides(service, message, severity)  # operator noise-suppression rules
+
+    # Proxmox burst coalescing: during a flood, suppress the individual print and let one summary
+    # (emitted here or by the flusher) carry it instead. The line is still stored below.
+    if device_id in _proxmox_devices and sev_num(severity) <= 3:
+        _ensure_flusher()
+        if _note_error_burst(device_id, service):
+            no_print = True
+            b = _bursts[device_id]
+            if time.time() - b.last_summary_ts >= _BURST_SUMMARY_EVERY:
+                await _emit_burst_summary(device_id, b)
 
     should_print = sev_num(severity) <= auto_print_max_num() and not no_print
     printed = False
@@ -2302,6 +2393,8 @@ async def _startup() -> None:
         log.info("Pruned %d logs older than %d days", removed, retention_days())
     db.prune_sessions()
     db.confer_prune_messages(retention_days())
+    # Know Proxmox scouts up front so a burst right after a restart still coalesces.
+    _proxmox_devices.update(d["id"] for d in db.list_devices() if (d.get("meta") or {}).get("proxmox"))
 
     async def _pruner() -> None:
         while True:

@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from app import render as r  # noqa: E402
 from app.main import app, _battery_updates, _apply_overrides  # noqa: E402
+from app import main as _m  # noqa: E402
 from scout import _parse_syslog  # noqa: E402
 
 MASTER_PASSWORD = "smoke-master-pw"
@@ -268,6 +269,15 @@ assert client.post("/watchtower/overrides", json={}, headers=AUTH).json()["overr
 assert "host_errors" in client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()
 assert client.post("/watchtower/devices/command", json={"device_id": "kitchen-pi", "cmd": "refresh-guests"}, headers=AUTH).json()["queued"] == 1
 print("  ok  severity overrides lower logs + host_errors + refresh-guests command")
+
+# ---- proxmox error-burst detection: below threshold no burst, then a flood trips it ----
+_m._bursts.clear()
+below = [_m._note_error_burst("pve1", "web01/nginx") for _ in range(_m._BURST_THRESHOLD - 1)]
+assert not any(below)  # under the threshold, each handled individually
+tripped = _m._note_error_burst("pve1", "db01/pg")
+assert tripped and _m._bursts["pve1"].pending_total == 1  # now bursting, accumulating a summary
+assert _m._note_error_burst("other", "x/y") is False  # a different (quiet) device is unaffected
+print("  ok  proxmox burst coalescer trips on a flood, accumulates per-source")
 
 # ---- printer WebSocket registers as the print target; /status shows online + print delivers ----
 psec = client.post("/watchtower/devices/create", json={"device_id": "printer1", "name": "Printer"}, headers=AUTH).json()["secret"]
