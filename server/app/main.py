@@ -1323,8 +1323,8 @@ def _save_overrides(rules: list) -> None:
 
 
 def _apply_overrides(service: str, message: str, severity: str) -> str:
-    """Lower `severity` to a rule's target when its (optional) service matches and its substring is
-    in the message. Only ever lowers, never raises."""
+    """Apply operator rules to a log. A matching `hide` rule returns "hide" (caller drops the log);
+    otherwise the severity is lowered to the rule's target (never raised). Hide wins."""
     for r in _load_overrides():
         svc = (r.get("service") or "").strip()
         if svc and svc != service:
@@ -1333,6 +1333,8 @@ def _apply_overrides(service: str, message: str, severity: str) -> str:
         if match and match not in message:
             continue
         target = r.get("severity")
+        if target == "hide":
+            return "hide"
         if target in SEVERITY_NAMES and sev_num(target) > sev_num(severity):
             severity = target
     return severity
@@ -1797,6 +1799,8 @@ async def ingest(request: Request) -> JSONResponse:
     # Forwarded logs / command output set no_print so they don't spew paper.
     no_print = bool(body.get("no_print") or body.get("auto_print") is False)
     severity = _apply_overrides(service, message, severity)  # operator noise-suppression rules
+    if severity == "hide":  # a hide rule matched: drop the log entirely
+        return JSONResponse({"ok": True, "hidden": True})
 
     # Proxmox burst coalescing: during a flood, suppress the individual print and let one summary
     # (emitted here or by the flusher) carry it instead. The line is still stored below.
@@ -2046,7 +2050,7 @@ async def watchtower_overrides(request: Request) -> JSONResponse:
     action = body.get("action")
     if action == "add":
         target = body.get("severity")
-        if target not in SEVERITY_NAMES:
+        if target not in SEVERITY_NAMES and target != "hide":
             return JSONResponse({"error": "bad severity"}, status_code=400)
         rules.append({"id": secrets.token_hex(4), "service": (body.get("service") or "").strip(),
                       "match": (body.get("match") or "").strip(), "severity": target})

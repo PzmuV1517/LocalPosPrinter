@@ -266,6 +266,14 @@ assert _apply_overrides("other.svc", "just a blip", "err") == "err"       # serv
 assert _apply_overrides("noisy.svc", "blip", "debug") == "debug"          # never raises
 client.post("/watchtower/overrides", json={"action": "delete", "id": _ov[0]["id"]}, headers=AUTH)
 assert client.post("/watchtower/overrides", json={}, headers=AUTH).json()["overrides"] == []
+# hide rule: matching messages are dropped entirely at ingest
+_hv = client.post("/watchtower/overrides", json={"action": "add", "match": "chatter",
+                  "severity": "hide"}, headers=AUTH).json()["overrides"]
+assert _apply_overrides("any.svc", "background chatter", "err") == "hide"
+hbody = json.dumps({"severity": "err", "message": "background chatter here", "service": "x"}).encode()
+resp = client.post("/ingest", data=hbody, headers=sign("POST", "/ingest", hbody)).json()
+assert resp.get("hidden") is True and "id" not in resp  # dropped, not stored
+client.post("/watchtower/overrides", json={"action": "delete", "id": _hv[0]["id"]}, headers=AUTH)
 assert "host_errors" in client.post("/watchtower/logs", json={"limit": 1}, headers=AUTH).json()
 assert client.post("/watchtower/devices/command", json={"device_id": "kitchen-pi", "cmd": "refresh-guests"}, headers=AUTH).json()["queued"] == 1
 print("  ok  severity overrides lower logs + host_errors + refresh-guests command")

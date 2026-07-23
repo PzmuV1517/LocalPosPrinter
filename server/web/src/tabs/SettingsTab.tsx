@@ -375,21 +375,22 @@ export function SettingsTab({ onUnauthorized }: { onUnauthorized: () => void }) 
       </div>
 
       <div className="card">
-        <h2>Lowered severities</h2>
+        <h2>Lowered & hidden messages</h2>
         <p className="muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
-          Rules that downgrade noisy log messages at ingest (so they stop printing and alerting).
-          Create one from any log in the Logs tab (its detail → "lower severity").
+          Rules applied at ingest: downgrade noisy messages (so they stop printing/alerting), or
+          hide them entirely (dropped, not stored). Create one from any log in the Logs tab.
         </p>
         {overrides.length === 0
-          ? <div className="muted" style={{ fontSize: 12 }}>None. Lower a message from the Logs tab to add one.</div>
+          ? <div className="muted" style={{ fontSize: 12 }}>None. Lower or hide a message from the Logs tab to add one.</div>
           : <div className="scroll"><table>
-              <thead><tr><th>Service</th><th>Message contains</th><th>→ Severity</th><th /></tr></thead>
+              <thead><tr><th>Service</th><th>Message contains</th><th>Action</th><th /></tr></thead>
               <tbody>
                 {overrides.map((o) => (
                   <tr key={o.id}>
                     <td className="mono">{o.service || 'any'}</td>
                     <td className="msg">{o.match || '(any)'}</td>
-                    <td><span className="pill ok">{o.severity}</span></td>
+                    <td><span className={`pill ${o.severity === 'hide' ? 'bad' : 'ok'}`}>
+                      {o.severity === 'hide' ? 'hidden' : `→ ${o.severity}`}</span></td>
                     <td><button className="ghost mini" onClick={() => removeOverride(o.id)}>Remove</button></td>
                   </tr>
                 ))}

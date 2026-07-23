@@ -27,8 +27,8 @@ function ErrorRateChart({ s }: { s: Series }) {
 function LogModal({ log, onClose, onLower }: {
   log: LogRow; onClose: () => void; onLower: (target: string) => void
 }) {
-  const lower = SEV_ORDER.slice(SEV_ORDER.indexOf(log.severity) + 1)
-  const [target, setTarget] = useState<string>(lower[0] || 'info')
+  const options = [...SEV_ORDER.slice(SEV_ORDER.indexOf(log.severity) + 1), 'hide']
+  const [target, setTarget] = useState<string>(options[0])
   return (
     <div className="modal-bg" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -48,22 +48,21 @@ function LogModal({ log, onClose, onLower }: {
           <div className="muted" style={{ marginTop: 10 }}>meta</div>
           <pre>{JSON.stringify(log.meta, null, 2)}</pre>
         </>}
-        {lower.length > 0 && (
-          <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-            <div className="muted">lower severity of messages like this</div>
-            <div className="row" style={{ alignItems: 'flex-end', marginTop: 6 }}>
-              <div style={{ flex: '0 0 auto' }}>
-                <select value={target} onChange={(e) => setTarget(e.target.value)}>
-                  {lower.map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-              </div>
-              <button className="ghost mini" style={{ flex: '0 0 auto' }} onClick={() => onLower(target)}>Apply</button>
+        <div style={{ marginTop: 14, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+          <div className="muted">lower severity or hide messages like this</div>
+          <div className="row" style={{ alignItems: 'flex-end', marginTop: 6 }}>
+            <div style={{ flex: '0 0 auto' }}>
+              <select value={target} onChange={(e) => setTarget(e.target.value)}>
+                {options.map((s) => <option key={s} value={s}>{s === 'hide' ? 'hide (drop)' : s}</option>)}
+              </select>
             </div>
-            <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
-              future logs from "{log.service || 'any'}" containing this message get severity {target}. Manage in Settings.
-            </div>
+            <button className="ghost mini" style={{ flex: '0 0 auto' }} onClick={() => onLower(target)}>Apply</button>
           </div>
-        )}
+          <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+            future logs from "{log.service || 'any'}" containing this message{' '}
+            {target === 'hide' ? 'are dropped (not stored or printed)' : `get severity ${target}`}. Manage in Settings.
+          </div>
+        </div>
       </div>
     </div>
   )
